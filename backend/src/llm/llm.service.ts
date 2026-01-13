@@ -190,13 +190,14 @@ Rules:
 3. Do NOT ask simple "List all..." questions.
 4. Focus on business insights (e.g., trends, top performers, correlation).
 5. Return ONLY a raw JSON array of strings, no markdown formatting. Example: ["question 1", "question 2"]
-6. diverse the topics.`;
+6. diverse the topics.
+7. Keep questions concise (under 100 characters each).`;
 
     const response = await this.generate({
       prompt: `Based on the following database schema, suggest ${count} complex analytical questions:\n\n${schemaContext}`,
       systemPrompt,
       temperature: 0.7,
-      maxTokens: 1500,
+      maxTokens: 3000,
     });
 
     try {
@@ -211,6 +212,22 @@ Rules:
       }
       return [];
     } catch (e) {
+      // JSON parsing failed, likely due to truncation using greedy regex to recover what we can
+      this.logger.warn(`JSON parse failed, attempting regex recovery. Error: ${e.message}`);
+      
+      try {
+        const content = response.content;
+        const matches = [...content.matchAll(/"((?:[^"\\]|\\.)*)"/g)];
+        const questions = matches.map(m => m[1]);
+        
+        if (questions.length > 0) {
+          // If we found questions, return them (up to the requested count or all found)
+           return questions.filter(q => q.trim().length > 0);
+        }
+      } catch (recoveryError) {
+        this.logger.error(`Failed to recover questions via regex: ${recoveryError.message}`);
+      }
+      
       this.logger.error(`Failed to parse recommended questions: ${e.message}. Content preview: ${response.content.substring(0, 500)}`);
       return [];
     }
