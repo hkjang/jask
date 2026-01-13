@@ -89,7 +89,7 @@ export function CommentSection({ queryId }: CommentSectionProps) {
           placeholder="Add a comment..." 
           value={newComment}
           onChange={(e) => setNewComment(e.target.value)}
-          className="min-h-[60px] resize-none text-sm"
+          className="min-h-[60px] resize-none text-sm border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-foreground placeholder:text-muted-foreground focus-visible:ring-zinc-400"
         />
         <Button 
             size="sm" 
