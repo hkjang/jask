@@ -1,0 +1,451 @@
+// Prisma Schema for Jask - NL2SQL Service
+generator client {
+  provider = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [vector]
+}
+
+// ===========================================
+// Enums
+// ===========================================
+enum ImportanceLevel {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum SensitivityLevel {
+  PUBLIC
+  INTERNAL
+  CONFIDENTIAL
+  STRICT
+}
+
+enum RelationType {
+  FK      // 물리적 Foreign Key
+  LOGICAL // 논리적 관계
+}
+
+enum PolicyType {
+  QUERY
+  SQL
+  METADATA
+  MODEL
+  DOMAIN
+}
+
+enum RiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum VerificationStatus {
+  NONE
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+// ===========================================
+// 데이터 소스 연결 정보
+// ===========================================
+model DataSource {
+  id          String   @id @default(uuid())
+  name        String
+  type        String   // postgresql, mysql, oracle, mssql
+  host        String
+  port        Int
+  database    String
+  username    String
+  password    String   @db.Text // 암호화 저장
+  schema      String?  @default("public")
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tables      TableMetadata[]
+  queries     QueryHistory[]
+  samples     SampleQuery[]
+}
+
+// ===========================================
+// 테이블 메타데이터
+// ===========================================
+model TableMetadata {
+  id           String   @id @default(uuid())
+  dataSourceId String
+  dataSource   DataSource @relation(fields: [dataSourceId], references: [id], onDelete: Cascade)
+
+  schemaName   String
+  tableName    String
+  description  String?  @db.Text
+  rowCount     Int?
+  isExcluded   Boolean  @default(false)
+  
+  // Extended Metadata
+  tags            String[]        @default([])
+  importanceLevel ImportanceLevel @default(MEDIUM)
+  isSyncedWithAI  Boolean         @default(false)
+  
+  // Quality & Workflow
+  completenessScore Float          @default(0)
+  metadataStatus    MetadataStatus @default(DRAFT)
+  reviewNotes       String?        @db.Text
+  lastAiUpdate      DateTime?
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  columns       ColumnMetadata[]
+  relationshipsFrom TableRelationship[] @relation("SourceTable")
+  relationshipsTo   TableRelationship[] @relation("TargetTable")
+
+  embedding     SchemaEmbedding?
+
+  @@unique([dataSourceId, schemaName, tableName])
+  @@index([dataSourceId])
+}
+
+enum MetadataStatus {
+  DRAFT
+  PENDING_REVIEW
+  VERIFIED
+}
+
+// ===========================================
+// 컬럼 메타데이터
+// ===========================================
+model ColumnMetadata {
+  id               String   @id @default(uuid())
+  tableId          String
+  table            TableMetadata @relation(fields: [tableId], references: [id], onDelete: Cascade)
+
+  columnName       String
+  dataType         String
+  description      String?  @db.Text
+  
+  // Extended Metadata
+  semanticName     String?  // 비즈니스/논리적 이름
+  unit             String?  // 단위 (예: kg, cm, krw)
+  isCode           Boolean  @default(false)
+  sensitivityLevel SensitivityLevel @default(INTERNAL)
+
+  isPrimaryKey     Boolean  @default(false)
+  isForeignKey     Boolean  @default(false)
+  referencedTable  String?
+  referencedColumn String?
+  isNullable       Boolean  @default(true)
+  codeValues       Json?    // Deprecated: Use CodeValue model instead if managing complex codes
+  
+  codeValueList    CodeValue[]
+
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([tableId, columnName])
+  @@index([tableId])
+}
+
+// ===========================================
+// 코드값 관리
+// ===========================================
+model CodeValue {
+  id           String   @id @default(uuid())
+  columnId     String
+  column       ColumnMetadata @relation(fields: [columnId], references: [id], onDelete: Cascade)
+
+  code         String
+  value        String
+  description  String?
+  isActive     Boolean  @default(true)
+  displayOrder Int      @default(0)
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([columnId, code])
+  @@index([columnId])
+}
+
+// ===========================================
+// 테이블 관계 (물리적 + 논리적)
+// ===========================================
+model TableRelationship {
+  id            String       @id @default(uuid())
+  
+  sourceTableId String
+  sourceTable   TableMetadata @relation("SourceTable", fields: [sourceTableId], references: [id], onDelete: Cascade)
+  
+  targetTableId String
+  targetTable   TableMetadata @relation("TargetTable", fields: [targetTableId], references: [id], onDelete: Cascade)
+  
+  relationType  RelationType @default(LOGICAL)
+  description   String?      @db.Text
+  
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@index([sourceTableId])
+  @@index([targetTableId])
+}
+
+// ===========================================
+// 쿼리 히스토리
+// ===========================================
+model QueryHistory {
+  id           String   @id @default(uuid())
+  dataSourceId String
+  dataSource   DataSource @relation(fields: [dataSourceId], references: [id], onDelete: Cascade)
+
+  userId       String
+  user         User     @relation(fields: [userId], references: [id])
+
+  naturalQuery String   @db.Text  // 자연어 질문
+  generatedSql String   @db.Text  // 생성된 SQL
+  finalSql     String?  @db.Text  // 수정된 SQL
+  sqlExplanation String? @db.Text // SQL 설명
+
+  status       QueryStatus @default(PENDING)
+  executionTime Int?       // ms
+  rowCount     Int?
+  errorMessage String?    @db.Text
+
+  feedback     Feedback?
+  feedbackNote String?    @db.Text
+
+  // Extended Features
+  trustScore        Float?             // 0.0 to 1.0
+  riskLevel         RiskLevel          @default(LOW)
+  verificationStatus VerificationStatus @default(NONE)
+
+  comments          QueryComment[]
+  shares            QueryShare[]
+
+  createdAt    DateTime @default(now())
+
+  @@index([userId])
+  @@index([dataSourceId])
+  @@index([createdAt])
+}
+
+enum QueryStatus {
+  PENDING
+  VALIDATING
+  EXECUTING
+  SUCCESS
+  FAILED
+  BLOCKED
+}
+
+enum Feedback {
+  POSITIVE
+  NEGATIVE
+}
+
+// ===========================================
+// 샘플 쿼리 (정확도 향상용 RAG)
+// ===========================================
+model SampleQuery {
+  id           String   @id @default(uuid())
+  dataSourceId String
+  dataSource   DataSource @relation(fields: [dataSourceId], references: [id], onDelete: Cascade)
+
+  naturalQuery String   @db.Text
+  sqlQuery     String   @db.Text
+  description  String?  @db.Text
+  tags         String[] @default([])
+  isVerified   Boolean  @default(false)
+  embedding    Unsupported("vector")?
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([dataSourceId])
+}
+
+// ===========================================
+// 사용자
+// ===========================================
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  password     String
+  name         String
+  role         Role     @default(USER)
+  isActive     Boolean  @default(true)
+
+  queries      QueryHistory[]
+  favorites    FavoriteQuery[]
+  
+  // Collaboration
+  comments     QueryComment[]
+  shares       QueryShare[]     @relation("SharedBy")
+
+  // Profile
+  department   String?
+  preferences  Json?
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([email])
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+// ===========================================
+// 즐겨찾기
+// ===========================================
+model FavoriteQuery {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name         String
+  naturalQuery String   @db.Text
+  sqlQuery     String   @db.Text
+  dataSourceId String?
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([userId])
+}
+
+// ===========================================
+// 시스템 설정
+// ===========================================
+model SystemSettings {
+  id          String   @id @default(uuid())
+  key         String   @unique
+  value       Json
+  description String?
+  updatedAt   DateTime @updatedAt
+}
+
+// ===========================================
+// LLM 프로바이더 설정
+// ===========================================
+model LLMProvider {
+  id          String   @id @default(uuid())
+  name        String   @unique  // ollama, vllm, openai
+  baseUrl     String
+  model       String
+  apiKey      String?  @db.Text
+  isActive    Boolean  @default(true)
+  isDefault   Boolean  @default(false)
+  config      Json?    // temperature, max_tokens 등
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ===========================================
+// 프롬프트 템플릿
+// ===========================================
+model PromptTemplate {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  type        PromptType
+  content     String   @db.Text
+  variables   String[] @default([])
+  isActive    Boolean  @default(true)
+  version     Int      @default(1)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+enum PromptType {
+  NL2SQL
+  SQL_EXPLAIN
+  SQL_FIX
+  RESULT_SUMMARY
+}
+
+// ===========================================
+// Schema Embeddings (pgvector)
+// ===========================================
+model SchemaEmbedding {
+  id           String   @id @default(uuid())
+  
+  tableId      String   @unique
+  table        TableMetadata @relation(fields: [tableId], references: [id], onDelete: Cascade)
+  
+  content      String   @db.Text
+  embedding    Unsupported("vector")? 
+  
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([tableId])
+}
+
+// ===========================================
+// 거버넌스 정책 (Governance)
+// ===========================================
+model GovernancePolicy {
+  id          String     @id @default(uuid())
+  name        String
+  type        PolicyType
+  description String?
+  config      Json       // 정책 설정 (예: { "maxJoins": 3 })
+  isActive    Boolean    @default(true)
+  priority    Int        @default(0)
+  
+  createdById String?
+  
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+}
+
+// ===========================================
+// 협업 - 댓글 (Collaboration)
+// ===========================================
+model QueryComment {
+  id             String       @id @default(uuid())
+  queryHistoryId String
+  queryHistory   QueryHistory @relation(fields: [queryHistoryId], references: [id], onDelete: Cascade)
+  
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  content        String       @db.Text
+  
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  
+  @@index([queryHistoryId])
+}
+
+// ===========================================
+// 협업 - 공유 (Collaboration)
+// ===========================================
+model QueryShare {
+  id             String       @id @default(uuid())
+  queryHistoryId String
+  queryHistory   QueryHistory @relation(fields: [queryHistoryId], references: [id], onDelete: Cascade)
+  
+  sharedByUserId String
+  sharedByUser   User         @relation("SharedBy", fields: [sharedByUserId], references: [id])
+  
+  sharedToUserId String?      // 특정 사용자에게 공유
+  sharedToTeam   String?      // 특정 팀에게 공유
+  isPublic       Boolean      @default(false) // 전체 공개
+  
+  createdAt      DateTime     @default(now())
+  
+  @@index([queryHistoryId])
+  @@index([sharedToUserId])
+}

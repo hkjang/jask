@@ -1,0 +1,1266 @@
+'use client';
+
+import { useState, useRef, useEffect, useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { MainLayout } from '@/components/layout/main-layout';
+import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
+import { Card, CardContent } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { api } from '@/lib/api';
+import { useToast } from '@/components/ui/use-toast';
+import {
+  BarChart,
+  Bar,
+  LineChart,
+  Line,
+  PieChart,
+  Pie,
+  Cell,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+} from 'recharts';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { ShareDialog } from './_components/share-dialog';
+import { CommentSection } from './_components/comment-section';
+import { FeedbackDialog } from './_components/feedback-dialog';
+import {
+  Send,
+  Database,
+  Loader2,
+  User,
+  Bot,
+  Play,
+  Copy,
+  ThumbsUp,
+  ThumbsDown,
+  Sparkles,
+  Table,
+  ChevronDown,
+  RefreshCw,
+  Download,
+  BarChart3,
+  LineChart as LineChartIcon,
+  PieChart as PieChartIcon,
+  Edit3,
+  Check,
+  X,
+  History,
+  Trash2,
+  Search,
+  ChevronRight,
+  RotateCcw,
+  Clock,
+  CheckCircle,
+  XCircle,
+  PanelRightOpen,
+  PanelRightClose,
+  Star,
+  MessageSquare, // Add this
+  Share2 // Add this
+} from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+
+interface Message {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  sql?: string;
+  result?: any;
+  queryId?: string;
+  timestamp: Date;
+  isLoading?: boolean;
+  error?: string;
+  meta?: {
+    tokens?: { prompt: number; completion: number; total: number };
+    trustScore?: number;
+    riskLevel?: string;
+  };
+}
+
+
+
+const CHART_COLORS = ['hsl(210, 70%, 50%)', 'hsl(240, 70%, 50%)', 'hsl(270, 70%, 50%)', 'hsl(300, 70%, 50%)', 'hsl(330, 70%, 50%)'];
+
+const ChartView = ({ rows }: { rows: any[] }) => {
+  const [chartType, setChartType] = useState<'bar' | 'line' | 'pie'>('bar');
+  
+  const chartData = useMemo(() => {
+    if (!rows || rows.length === 0) return null;
+    const keys = Object.keys(rows[0]);
+    if (keys.length < 2) return null;
+
+    let xKey = keys.find((k) => {
+      const val = rows[0][k];
+      return typeof val === 'string' || val instanceof Date;
+    });
+    if (!xKey) xKey = keys[0];
+
+    const dataKeys = keys.filter(
+      (k) => k !== xKey && typeof rows[0][k] === 'number'
+    );
+
+    if (dataKeys.length === 0) return null;
+
+    return { xKey, dataKeys, data: rows.slice(0, 20) };
+  }, [rows]);
+
+  if (!chartData) return null;
+
+  const renderChart = () => {
+    switch (chartType) {
+      case 'line':
+        return (
+          <LineChart data={chartData.data} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey={chartData.xKey} />
+            <YAxis />
+            <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--background))', borderColor: 'hsl(var(--border))' }} />
+            <Legend />
+            {chartData.dataKeys.map((key, index) => (
+              <Line key={key} type="monotone" dataKey={key} stroke={CHART_COLORS[index % CHART_COLORS.length]} strokeWidth={2} dot={{ r: 4 }} />
+            ))}
+          </LineChart>
+        );
+      case 'pie':
+        const pieData = chartData.data.map((d) => ({ name: d[chartData.xKey], value: d[chartData.dataKeys[0]] }));
+        return (
+          <PieChart>
+            <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100} label>
+              {pieData.map((_, index) => <Cell key={index} fill={CHART_COLORS[index % CHART_COLORS.length]} />)}
+            </Pie>
+            <Tooltip />
+            <Legend />
+          </PieChart>
+        );
+      default:
+        return (
+          <BarChart data={chartData.data} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey={chartData.xKey} />
+            <YAxis />
+            <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--background))', borderColor: 'hsl(var(--border))' }} />
+            <Legend />
+            {chartData.dataKeys.map((key, index) => (
+              <Bar key={key} dataKey={key} fill={CHART_COLORS[index % CHART_COLORS.length]} radius={[4, 4, 0, 0]} />
+            ))}
+          </BarChart>
+        );
+    }
+  };
+
+  return (
+    <div className="mt-6 h-[340px] w-full">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-sm font-semibold">데이터 시각화</h3>
+        <div className="flex gap-1 p-1 bg-muted rounded-lg">
+          <button onClick={() => setChartType('bar')} className={`p-1.5 rounded ${chartType === 'bar' ? 'bg-background shadow-sm' : ''}`}>
+            <BarChart3 className="h-4 w-4" />
+          </button>
+          <button onClick={() => setChartType('line')} className={`p-1.5 rounded ${chartType === 'line' ? 'bg-background shadow-sm' : ''}`}>
+            <LineChartIcon className="h-4 w-4" />
+          </button>
+          <button onClick={() => setChartType('pie')} className={`p-1.5 rounded ${chartType === 'pie' ? 'bg-background shadow-sm' : ''}`}>
+            <PieChartIcon className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+      <ResponsiveContainer width="100%" height="85%">
+        {renderChart()}
+      </ResponsiveContainer>
+    </div>
+  );
+};
+
+export default function QueryPage() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  const [messages, setMessages] = useState<Message[]>([
+    {
+      id: 'welcome',
+      role: 'assistant',
+      content: '안녕하세요! 🎉 자연어로 데이터를 조회해보세요. 질문을 입력하면 SQL로 변환해드립니다.',
+      timestamp: new Date(),
+    },
+  ]);
+  const [input, setInput] = useState('');
+  const [selectedDataSource, setSelectedDataSource] = useState<string>('');
+  const [isDataSourceOpen, setIsDataSourceOpen] = useState(false);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [historySearch, setHistorySearch] = useState('');
+  const [historyStatusFilter, setHistoryStatusFilter] = useState<'all' | 'SUCCESS' | 'FAILED'>('all');
+  const [shareQueryId, setShareQueryId] = useState<string | null>(null);
+  const [activeCommentQueryId, setActiveCommentQueryId] = useState<string | null>(null);
+  
+  // Feedback State
+  const [feedbackQueryId, setFeedbackQueryId] = useState<string | null>(null);
+  const [isFeedbackDialogOpen, setIsFeedbackDialogOpen] = useState(false);
+
+  // Query History
+  const { data: historyData, isLoading: isHistoryLoading, refetch: refetchHistory } = useQuery({
+    queryKey: ['queryHistory', selectedDataSource],
+    queryFn: async () => {
+         const res: any = await api.getQueryHistory({ limit: 30, dataSourceId: selectedDataSource || undefined });
+         return res;
+    },
+    enabled: isHistoryOpen,
+  });
+
+  const filteredHistory = useMemo(() => {
+    if (!historyData?.items) return [];
+    return historyData.items.filter((item: any) => {
+      const matchesSearch = !historySearch || 
+        item.naturalQuery?.toLowerCase().includes(historySearch.toLowerCase());
+      const matchesStatus = historyStatusFilter === 'all' || item.status === historyStatusFilter;
+      return matchesSearch && matchesStatus;
+    });
+  }, [historyData, historySearch, historyStatusFilter]);
+
+  const { data: dataSources = [] } = useQuery({
+    queryKey: ['dataSources'],
+    queryFn: () => api.getDataSources(),
+  });
+
+  useEffect(() => {
+    if (dataSources.length > 0 && !selectedDataSource) {
+      setSelectedDataSource(dataSources[0].id);
+    }
+  }, [dataSources, selectedDataSource]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  // Fetch AI recommended questions
+  const { data: suggestedQuestions = [], isLoading: isSuggestionsLoading, refetch: refetchSuggestions } = useQuery({
+    queryKey: ['suggestedQuestions', selectedDataSource],
+    queryFn: () => api.getRecommendedQuestions(selectedDataSource),
+    enabled: !!selectedDataSource,
+    staleTime: 1000 * 60 * 60, // Cache for 1 hour
+    retry: false,
+  });
+
+  const generateMutation = useMutation({
+    mutationFn: (question: string) =>
+      api.generateQuery(selectedDataSource, question, true),
+    onSuccess: (data: any, question) => {
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.isLoading
+            ? {
+                ...msg,
+                isLoading: false,
+                content: data.explanation || 'SQL이 생성되었습니다.',
+                sql: data.generatedSQL,
+                result: data.result,
+                queryId: data.queryId,
+              }
+            : msg
+        )
+      );
+    },
+    onError: (error: Error) => {
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.isLoading
+            ? {
+                ...msg,
+                isLoading: false,
+                content: '죄송합니다, 오류가 발생했습니다.',
+                error: error.message,
+              }
+            : msg
+        )
+      );
+    },
+  });
+
+  const executeMutation = useMutation({
+    mutationFn: ({ queryId, sql }: { queryId: string; sql: string }) =>
+      api.executeQuery(queryId, sql),
+    onSuccess: (data, variables) => {
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.queryId === variables.queryId
+            ? { ...msg, result: data }
+            : msg
+        )
+      );
+      toast({ title: '쿼리 실행 완료' });
+    },
+  });
+
+  const addFavoriteMutation = useMutation({
+    mutationFn: (data: { name: string; naturalQuery: string; sqlQuery: string }) =>
+      api.addFavorite(data),
+    onSuccess: () => {
+      toast({ title: '즐겨찾기에 추가되었습니다 ⭐' });
+    },
+    onError: () => {
+      toast({ title: '즐겨찾기 추가 실패', variant: 'destructive' });
+    },
+  });
+
+  // Feedback Handler
+  const handleFeedback = async (queryId: string, type: 'POSITIVE' | 'NEGATIVE', note?: string) => {
+    try {
+      await api.post(`/query/${queryId}/feedback`, { feedback: type, note });
+      toast({ title: type === 'POSITIVE' ? "Thanks for your feedback!" : "Feedback submitted." });
+    } catch (e) {
+      toast({ title: "Failed to submit feedback", variant: "destructive" });
+    }
+  };
+  
+  const onNegativeFeedback = (queryId: string) => {
+     setFeedbackQueryId(queryId);
+     setIsFeedbackDialogOpen(true);
+  };
+  
+  const handleSend = async () => {
+    if (!input.trim()) return;
+    if (!selectedDataSource) {
+      toast({ title: '데이터소스를 선택해주세요', variant: 'destructive' });
+      return;
+    }
+
+    const userMessage: Message = {
+      id: Date.now().toString(),
+      role: 'user',
+      content: input,
+      timestamp: new Date(),
+    };
+
+    const assistantMessage: Message = {
+      id: (Date.now() + 1).toString(),
+      role: 'assistant',
+      content: '',
+      timestamp: new Date(),
+      isLoading: true,
+    };
+
+    setMessages((prev) => [...prev, userMessage, assistantMessage]);
+    
+    // Streaming implementation
+    try {
+      let currentContent = '';
+      let currentSql = '';
+      let sqlExplanation = '';
+      let tokenUsage = { prompt: 0, completion: 0, total: 0 };
+      let stepMessage = '';
+
+      const stream = api.generateQueryStream(selectedDataSource, input, true);
+
+      for await (const chunk of stream) {
+        if (chunk.type === 'step_start') {
+          // Optional: You can indicate step changes if you want, or just rely on content updates
+          // stepMessage = `[${chunk.step}] ${chunk.message}`; 
+        } else if (chunk.type === 'content_chunk') {
+          if (chunk.step === 'sql_generation') {
+            currentSql += chunk.content;
+            // Visualizing SQL Generation Step
+            // We construct the content to show what is happening
+            const displayContent = `### 1. SQL Generation\n\`\`\`sql\n${currentSql}\n\`\`\`\n\n`;
+            
+            setMessages((prev) => prev.map(msg => 
+              msg.id === assistantMessage.id 
+                ? { ...msg, isLoading: true, content: displayContent, sql: currentSql } 
+                : msg
+            ));
+          } else if (chunk.step === 'explanation') {
+            sqlExplanation += chunk.content;
+            
+            // Visualizing Explanation Step (Appending to SQL)
+            const displayContent = `### 1. SQL Generation\n\`\`\`sql\n${currentSql}\n\`\`\`\n\n### 2. Explanation\n${sqlExplanation}`;
+            
+            setMessages((prev) => prev.map(msg => 
+              msg.id === assistantMessage.id 
+                ? { 
+                    ...msg, 
+                    content: displayContent, 
+                    sql: currentSql,
+                    isLoading: false 
+                  } 
+                : msg
+            ));
+          }
+        } else if (chunk.type === 'token_usage') {
+          const usage = chunk.usage;
+          tokenUsage.prompt += usage.promptTokens;
+          tokenUsage.completion += usage.completionTokens;
+          tokenUsage.total += usage.totalTokens;
+        } else if (chunk.type === 'total_usage') {
+           // Final usage update
+           setMessages((prev) => prev.map(msg => 
+              msg.id === assistantMessage.id 
+                ? { ...msg, meta: { tokens: chunk.usage } } 
+                : msg
+            ));
+        } else if (chunk.type === 'execution_result') {
+           setMessages((prev) => prev.map(msg => 
+              msg.id === assistantMessage.id 
+                ? { ...msg, result: chunk.result } 
+                : msg
+            ));
+        } else if (chunk.type === 'done') {
+           // Finalize
+           setMessages((prev) => prev.map(msg => 
+              msg.id === assistantMessage.id 
+                ? { 
+                    ...msg, 
+                    isLoading: false, 
+                    queryId: chunk.queryId,
+                    meta: { 
+                        ...msg.meta, 
+                        trustScore: chunk.trustScore, 
+                        riskLevel: chunk.riskLevel 
+                    }
+                  } 
+                : msg
+            ));
+        } else if (chunk.type === 'error') {
+           throw new Error(chunk.message);
+        }
+      }
+
+    } catch (error: any) {
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === assistantMessage.id
+            ? {
+                ...msg,
+                isLoading: false,
+                content: '오류가 발생했습니다.',
+                error: error.message,
+              }
+            : msg
+        )
+      );
+    }
+    
+    setInput('');
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  };
+
+  const copySQL = (sql: string) => {
+    navigator.clipboard.writeText(sql);
+    toast({ title: 'SQL이 복사되었습니다' });
+  };
+
+
+
+  const selectedDS = dataSources.find((ds: any) => ds.id === selectedDataSource);
+
+  return (
+    <MainLayout>
+      <div className="flex h-[calc(100vh-4rem)]">
+        {/* Main Content */}
+        <div className={`flex flex-col flex-1 transition-all duration-300 ${isHistoryOpen ? 'mr-80' : ''}`}>
+        {/* Header */}
+        <div className="border-b px-4 py-3 flex items-center justify-between bg-background/95 backdrop-blur">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center justify-center h-9 w-9 rounded-lg bg-primary text-primary-foreground">
+              <Sparkles className="h-5 w-5" />
+            </div>
+            <div>
+              <h1 className="font-semibold">데이터 질문하기</h1>
+              <p className="text-xs text-muted-foreground">자연어로 SQL 쿼리 생성</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {/* Clear Chat */}
+            {messages.length > 1 && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9"
+                onClick={() => {
+                  setMessages([{
+                    id: 'welcome',
+                    role: 'assistant',
+                    content: '안녕하세요! 🎉 자연어로 데이터를 조회해보세요. 질문을 입력하면 SQL로 변환해드립니다.',
+                    timestamp: new Date(),
+                  }]);
+                  toast({ title: '대화가 초기화되었습니다' });
+                }}
+                title="대화 초기화"
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            )}
+
+            {/* DataSource Selector */}
+            <div className="relative">
+              <Button
+                variant="outline"
+                className="gap-2"
+                onClick={() => setIsDataSourceOpen(!isDataSourceOpen)}
+              >
+                <Database className="h-4 w-4" />
+                {selectedDS?.name || '데이터소스 선택'}
+                <ChevronDown className="h-4 w-4" />
+              </Button>
+            {isDataSourceOpen && (
+              <div className="absolute right-0 mt-2 w-64 rounded-lg border bg-popover shadow-lg z-50">
+                <div className="p-2">
+                  {dataSources.length === 0 ? (
+                    <p className="text-sm text-muted-foreground p-2">
+                      연결된 데이터소스가 없습니다
+                    </p>
+                  ) : (
+                    dataSources.map((ds: any) => (
+                      <button
+                        key={ds.id}
+                        className={`w-full text-left px-3 py-2 rounded-md text-sm hover:bg-accent transition-colors ${
+                          selectedDataSource === ds.id ? 'bg-accent' : ''
+                        }`}
+                        onClick={() => {
+                          setSelectedDataSource(ds.id);
+                          setIsDataSourceOpen(false);
+                        }}
+                      >
+                        <div className="flex items-center gap-2">
+                          <div className={`h-2 w-2 rounded-full ${ds.isActive ? 'bg-green-500' : 'bg-gray-300'}`} />
+                          <span className="font-medium">{ds.name}</span>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          {ds.type} · {ds.host}:{ds.port}
+                        </p>
+                      </button>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+            {/* History Toggle */}
+            <Button
+              variant={isHistoryOpen ? "default" : "outline"}
+              size="icon"
+              className="h-9 w-9"
+              onClick={() => setIsHistoryOpen(!isHistoryOpen)}
+              title="질문 히스토리"
+            >
+              {isHistoryOpen ? (
+                <PanelRightClose className="h-4 w-4" />
+              ) : (
+                <History className="h-4 w-4" />
+              )}
+            </Button>
+          </div>
+        </div>
+
+        {/* Messages */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          {messages.map((message) => (
+            <div
+              key={message.id}
+              className={`flex gap-3 ${message.role === 'user' ? 'justify-end' : ''}`}
+            >
+              {message.role === 'assistant' && (
+                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
+                  <Bot className="h-4 w-4 text-primary" />
+                </div>
+              )}
+
+              <div className={`max-w-[80%] ${message.role === 'user' ? 'order-first' : ''}`}>
+                {message.role === 'user' ? (
+                  <div className="bg-primary text-primary-foreground rounded-2xl rounded-tr-sm px-4 py-2.5">
+                    <p>{message.content}</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {message.isLoading && !message.content ? (
+                      <div className="bg-muted rounded-2xl rounded-tl-sm px-4 py-4">
+                        <div className="flex items-center gap-3">
+                          <div className="relative">
+                            <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                            <div className="absolute inset-0 h-5 w-5 rounded-full bg-primary/20 animate-ping" />
+                          </div>
+                          <div className="flex flex-col gap-1">
+                            <span className="text-sm font-medium">AI가 분석 중입니다...</span>
+                            <div className="flex items-center gap-2">
+                              <div className="h-1.5 w-24 bg-muted-foreground/20 rounded-full overflow-hidden">
+                                <div className="h-full w-1/2 bg-primary rounded-full animate-pulse" style={{ animation: 'pulse 1s ease-in-out infinite, moveRight 2s linear infinite' }} />
+                              </div>
+                              <span className="text-xs text-muted-foreground">SQL 생성 중</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ) : message.isLoading && message.content ? (
+                      <div className="bg-muted rounded-2xl rounded-tl-sm px-4 py-3 text-sm">
+                        <div className="flex items-center gap-2 mb-2 pb-2 border-b border-border/50">
+                          <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+                          <span className="text-xs text-primary font-medium">실시간 스트리밍...</span>
+                        </div>
+                        <ReactMarkdown
+                          remarkPlugins={[remarkGfm]}
+                          components={{
+                            code: ({ node, className, children, ...props }: any) => (
+                              <code className="relative rounded bg-background px-[0.3rem] py-[0.2rem] font-mono text-sm font-semibold" {...props}>{children}</code>
+                            ),
+                            p: ({ node, ...props }) => <p className="whitespace-pre-wrap mb-2 last:mb-0" {...props} />,
+                          }}
+                        >
+                          {message.content}
+                        </ReactMarkdown>
+                      </div>
+                    ) : (
+                      <>
+                        {message.error ? (
+                          <div className="bg-destructive/10 text-destructive rounded-2xl rounded-tl-sm px-4 py-3">
+                            <p className="text-sm">{message.error}</p>
+                          </div>
+                        ) : (
+                          <div className="bg-muted rounded-2xl rounded-tl-sm px-4 py-3 text-sm">
+                            <ReactMarkdown
+                              remarkPlugins={[remarkGfm]}
+                              components={{
+                                table: ({ node, ...props }) => (
+                                  <div className="overflow-x-auto my-2 border rounded-md bg-background">
+                                    <table className="w-full text-sm" {...props} />
+                                  </div>
+                                ),
+                                thead: ({ node, ...props }) => (
+                                  <thead className="bg-muted/50 border-b" {...props} />
+                                ),
+                                tbody: ({ node, ...props }) => (
+                                  <tbody className="divide-y" {...props} />
+                                ),
+                                tr: ({ node, ...props }) => (
+                                  <tr className="hover:bg-muted/50 transition-colors" {...props} />
+                                ),
+                                th: ({ node, ...props }) => (
+                                  <th className="h-10 px-3 text-left align-middle font-medium text-muted-foreground [&:has([role=checkbox])]:pr-0" {...props} />
+                                ),
+                                td: ({ node, ...props }) => (
+                                  <td className="p-3 align-middle [&:has([role=checkbox])]:pr-0" {...props} />
+                                ),
+                                p: ({ node, ...props }) => (
+                                  <p className="whitespace-pre-wrap mb-2 last:mb-0" {...props} />
+                                ),
+                                ul: ({ node, ...props }) => (
+                                  <ul className="my-2 ml-6 list-disc [&>li]:mt-1" {...props} />
+                                ),
+                                ol: ({ node, ...props }) => (
+                                  <ol className="my-2 ml-6 list-decimal [&>li]:mt-1" {...props} />
+                                ),
+                                code: ({ node, className, children, ...props }: any) => {
+                                  return (
+                                    <code
+                                      className="relative rounded bg-muted px-[0.3rem] py-[0.2rem] font-mono text-sm font-semibold"
+                                      {...props}
+                                    >
+                                      {children}
+                                    </code>
+                                  );
+                                },
+                              }}
+                            >
+                              {message.content}
+                            </ReactMarkdown>
+                            {message.meta?.tokens && (
+                              <div className="mt-2 pt-2 border-t text-xs text-muted-foreground flex gap-3">
+                                 <span className="font-semibold">Tokens: {message.meta.tokens.total}</span>
+                                 <span>(In: {message.meta.tokens.prompt} / Out: {message.meta.tokens.completion})</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {message.sql && (
+                          <Card className="overflow-hidden">
+                            <div className="bg-zinc-900 text-zinc-100 p-4">
+                              <div className="flex items-center justify-between mb-2">
+                                <div className="flex items-center gap-2">
+                                    <span className="text-xs text-zinc-400">Generated SQL</span>
+                                    {message.meta?.riskLevel && (
+                                        <Badge variant="outline" className={`text-[10px] h-5 px-1.5 ${
+                                            message.meta.riskLevel === 'HIGH' || message.meta.riskLevel === 'CRITICAL' ? 'border-red-500 text-red-500' :
+                                            message.meta.riskLevel === 'MEDIUM' ? 'border-yellow-500 text-yellow-500' :
+                                            'border-green-500 text-green-500'
+                                        }`}>
+                                            Risk: {message.meta.riskLevel}
+                                        </Badge>
+                                    )}
+                                    {message.meta?.trustScore !== undefined && (
+                                        <Badge variant="outline" className={`text-[10px] h-5 px-1.5 ${
+                                            message.meta.trustScore < 0.5 ? 'border-red-500 text-red-500' : 
+                                            message.meta.trustScore > 0.8 ? 'border-green-500 text-green-500' : 'border-blue-500 text-blue-500'
+                                        }`}>
+                                            Trust: {Math.round(message.meta.trustScore * 100)}%
+                                        </Badge>
+                                    )}
+                                </div>
+                                <div className="flex gap-1">
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-6 w-6 text-zinc-400 hover:text-white"
+                                    onClick={() => copySQL(message.sql!)}
+                                  >
+                                    <Copy className="h-3 w-3" />
+                                  </Button>
+                                  {message.queryId && (
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-6 w-6 text-zinc-400 hover:text-white"
+                                      onClick={() =>
+                                        executeMutation.mutate({
+                                          queryId: message.queryId!,
+                                          sql: message.sql!,
+                                        })
+                                      }
+                                    >
+                                      <RefreshCw className="h-3 w-3" />
+                                    </Button>
+                                  )}
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-6 w-6 text-zinc-400 hover:text-yellow-400"
+                                    onClick={() => {
+                                      // Find the user message for this response
+                                      const msgIndex = messages.findIndex(m => m.id === message.id);
+                                      const userMsg = messages.slice(0, msgIndex).reverse().find(m => m.role === 'user');
+                                      addFavoriteMutation.mutate({
+                                        name: userMsg?.content?.slice(0, 50) || 'My Query',
+                                        naturalQuery: userMsg?.content || '',
+                                        sqlQuery: message.sql!,
+                                      });
+                                    }}
+                                    title="즐겨찾기에 추가"
+                                  >
+                                    <Star className="h-3 w-3" />
+                                  </Button>
+                                  
+                                  {/* Feedback Buttons */}
+                                  {message.queryId && (
+                                     <>
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          className="h-6 w-6 text-zinc-400 hover:text-green-500"
+                                          onClick={() => handleFeedback(message.queryId!, 'POSITIVE')}
+                                          title="Good Response"
+                                        >
+                                          <ThumbsUp className="h-3 w-3" />
+                                        </Button>
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          className="h-6 w-6 text-zinc-400 hover:text-red-500"
+                                          onClick={() => onNegativeFeedback(message.queryId!)}
+                                          title="Bad Response"
+                                        >
+                                          <ThumbsDown className="h-3 w-3" />
+                                        </Button>
+                                     </>
+                                  )}
+
+                                  {/* Collaboration Buttons */}
+                                  {message.queryId && (
+                                    <>
+                                        <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-6 w-6 text-zinc-400 hover:text-zinc-100"
+                                            onClick={() => setActiveCommentQueryId(activeCommentQueryId === message.queryId ? null : message.queryId)}
+                                            title="Comments"
+                                        >
+                                            <MessageSquare className="h-3 w-3" />
+                                        </Button>
+                                        <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-6 w-6 text-zinc-400 hover:text-zinc-100"
+                                            onClick={() => setShareQueryId(message.queryId)}
+                                            title="Share"
+                                        >
+                                            <Share2 className="h-3 w-3" />
+                                        </Button>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="relative">
+                                {/* ... SQL Code ... */}
+                                <SyntaxHighlighter
+                                  language="sql"
+                                  style={vscDarkPlus}
+                                  customStyle={{ margin: 0, padding: '1rem', background: 'transparent' }}
+                                >
+                                  {String(message.sql)}
+                                </SyntaxHighlighter>
+                              </div>
+
+                              {/* Comments Section */}
+                              {activeCommentQueryId === message.queryId && message.queryId && (
+                                  <div className="border-t border-zinc-700 bg-zinc-800/50 p-3">
+                                      <CommentSection queryId={message.queryId} />
+                                  </div>
+                              )}
+                            </div>
+                          </Card>
+                        )}
+
+                        {message.result && (
+                          <Card>
+                            <CardContent className="p-0">
+                              <div className="flex items-center justify-between px-4 py-2 border-b bg-muted/50">
+                                <div className="flex items-center gap-2">
+                                  <Table className="h-4 w-4" />
+                                  <span className="text-sm font-medium">
+                                    결과 ({message.result.rowCount || message.result.rows?.length || 0}행)
+                                  </span>
+                                  {message.result.executionTime && (
+                                    <span className="text-xs text-muted-foreground">
+                                      {message.result.executionTime}ms
+                                    </span>
+                                  )}
+                                </div>
+                                {message.result.rows?.length > 0 && (
+                                  <div className="flex gap-1">
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-7 text-xs gap-1"
+                                      onClick={() => {
+                                        const rows = message.result.rows;
+                                        const headers = Object.keys(rows[0]);
+                                        const csvContent = [
+                                          headers.join(','),
+                                          ...rows.map((row: any) => headers.map(h => `"${String(row[h] ?? '').replace(/"/g, '""')}"`).join(','))
+                                        ].join('\n');
+                                        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                                        const url = URL.createObjectURL(blob);
+                                        const a = document.createElement('a');
+                                        a.href = url;
+                                        a.download = `query-result-${new Date().toISOString().slice(0,10)}.csv`;
+                                        a.click();
+                                        URL.revokeObjectURL(url);
+                                        toast({ title: 'CSV 파일이 다운로드되었습니다' });
+                                      }}
+                                    >
+                                      <Download className="h-3 w-3" />
+                                      CSV
+                                    </Button>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-7 text-xs gap-1"
+                                      onClick={() => {
+                                        const jsonContent = JSON.stringify(message.result.rows, null, 2);
+                                        const blob = new Blob([jsonContent], { type: 'application/json' });
+                                        const url = URL.createObjectURL(blob);
+                                        const a = document.createElement('a');
+                                        a.href = url;
+                                        a.download = `query-result-${new Date().toISOString().slice(0,10)}.json`;
+                                        a.click();
+                                        URL.revokeObjectURL(url);
+                                        toast({ title: 'JSON 파일이 다운로드되었습니다' });
+                                      }}
+                                    >
+                                      <Download className="h-3 w-3" />
+                                      JSON
+                                    </Button>
+                                  </div>
+                                )}
+                              </div>
+                              <div className="max-h-64 overflow-auto">
+                                {message.result.rows && message.result.rows.length > 0 ? (
+                                  <table className="w-full text-sm">
+                                    <thead className="bg-muted/30 sticky top-0">
+                                      <tr>
+                                        <th className="px-3 py-2 text-left font-medium w-10 text-muted-foreground">#</th>
+                                        {Object.keys(message.result.rows[0]).map((key) => (
+                                          <th key={key} className="px-3 py-2 text-left font-medium">
+                                            {key}
+                                          </th>
+                                        ))}
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {message.result.rows.slice(0, 50).map((row: any, i: number) => (
+                                        <tr key={i} className="border-t hover:bg-muted/30">
+                                          <td className="px-3 py-2 text-muted-foreground text-xs">{i + 1}</td>
+                                          {Object.values(row).map((val: any, j: number) => (
+                                            <td key={j} className="px-3 py-2 max-w-xs truncate">
+                                              {val === null ? (
+                                                <span className="text-muted-foreground italic">null</span>
+                                              ) : typeof val === 'number' ? (
+                                                <span className="font-mono">{val.toLocaleString()}</span>
+                                              ) : (
+                                                String(val)
+                                              )}
+                                            </td>
+                                          ))}
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                ) : (
+                                  <div className="py-8 text-center text-muted-foreground">
+                                    결과가 없습니다
+                                  </div>
+                                )}
+                              </div>
+                              <ChartView rows={message.result.rows} />
+                            </CardContent>
+                          </Card>
+                        )}
+
+                        {message.queryId && !message.error && (
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-muted-foreground">도움이 되었나요?</span>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                              onClick={() => handleFeedback(message.queryId!, true)}
+                            >
+                              <ThumbsUp className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                              onClick={() => handleFeedback(message.queryId!, false)}
+                            >
+                              <ThumbsDown className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {message.role === 'user' && (
+                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary flex items-center justify-center">
+                  <User className="h-4 w-4 text-primary-foreground" />
+                </div>
+              )}
+            </div>
+          ))}
+          <div ref={messagesEndRef} />
+        </div>
+
+        {/* Suggested Questions */}
+        {messages.length === 1 && (
+          <div className="px-4 pb-2">
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-yellow-500" />
+                  AI 추천 질문
+                </h3>
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  className="h-6 w-6 p-0" 
+                  onClick={() => refetchSuggestions()}
+                  disabled={isSuggestionsLoading}
+                >
+                  <RefreshCw className={`h-3 w-3 ${isSuggestionsLoading ? 'animate-spin' : ''}`} />
+                </Button>
+              </div>
+              
+              {isSuggestionsLoading ? (
+                <div className="flex flex-wrap gap-2">
+                   {[1, 2, 3].map(i => (
+                     <div key={i} className="h-8 w-32 bg-muted rounded-full animate-pulse" />
+                   ))}
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {suggestedQuestions.length > 0 ? suggestedQuestions.map((q, i) => (
+                    <button
+                      key={i}
+                      className="px-3 py-1.5 text-sm rounded-full border bg-background hover:bg-accent transition-colors text-left"
+                      onClick={() => setInput(q)}
+                    >
+                      {q}
+                    </button>
+                  )) : (
+                    <p className="text-sm text-muted-foreground">추천 질문을 생성할 수 없습니다.</p>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Input Area */}
+        <div className="border-t p-4 bg-background/95 backdrop-blur">
+          <div className="max-w-4xl mx-auto">
+            {/* Quick Examples (shown when input is empty and few messages) */}
+            {!input && messages.length <= 2 && (
+              <div className="mb-3 flex flex-wrap gap-2">
+                <span className="text-xs text-muted-foreground self-center">예시:</span>
+                {['지난 달 매출 합계', '최근 10개 주문', '고객별 구매 횟수'].map((ex) => (
+                  <button
+                    key={ex}
+                    onClick={() => setInput(ex)}
+                    className="px-2.5 py-1 text-xs rounded-md bg-muted hover:bg-accent transition-colors"
+                  >
+                    {ex}
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <Textarea
+                  ref={inputRef}
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder="자연어로 질문을 입력하세요..."
+                  className="min-h-[52px] max-h-32 resize-none pr-20"
+                  rows={1}
+                />
+                <div className="absolute right-2 bottom-2 text-xs text-muted-foreground hidden sm:block">
+                  ⏎ 전송
+                </div>
+              </div>
+              <Button
+                onClick={handleSend}
+                disabled={!input.trim() || generateMutation.isPending}
+                className="h-[52px] w-[52px] shrink-0"
+              >
+                {generateMutation.isPending ? (
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                ) : (
+                  <Send className="h-5 w-5" />
+                )}
+              </Button>
+            </div>
+            <div className="flex items-center justify-between mt-2 text-xs text-muted-foreground">
+              <span className="hidden sm:inline">💡 Tip: 구체적으로 질문할수록 정확한 결과를 얻을 수 있어요</span>
+              <span>Enter 전송 · Shift+Enter 줄바꿈</span>
+            </div>
+          </div>
+        </div>
+        </div>
+
+        {/* History Sidebar */}
+        <div 
+          className={`fixed right-0 top-16 h-[calc(100vh-4rem)] w-80 border-l bg-background shadow-lg transition-transform duration-300 ${
+            isHistoryOpen ? 'translate-x-0' : 'translate-x-full'
+          }`}
+        >
+          <div className="flex flex-col h-full">
+            {/* Sidebar Header */}
+            <div className="border-b px-4 py-3">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <History className="h-5 w-5 text-primary" />
+                  <h2 className="font-semibold">질문 히스토리</h2>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={() => refetchHistory()}
+                  disabled={isHistoryLoading}
+                >
+                  <RotateCcw className={`h-3.5 w-3.5 ${isHistoryLoading ? 'animate-spin' : ''}`} />
+                </Button>
+              </div>
+              
+              {/* Search */}
+              <div className="relative mb-2">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="질문 검색..."
+                  value={historySearch}
+                  onChange={(e) => setHistorySearch(e.target.value)}
+                  className="pl-8 h-8 text-sm"
+                />
+              </div>
+
+              {/* Filter */}
+              <div className="flex gap-1">
+                <Button
+                  variant={historyStatusFilter === 'all' ? 'default' : 'ghost'}
+                  size="sm"
+                  className="h-7 text-xs flex-1"
+                  onClick={() => setHistoryStatusFilter('all')}
+                >
+                  전체
+                </Button>
+                <Button
+                  variant={historyStatusFilter === 'SUCCESS' ? 'default' : 'ghost'}
+                  size="sm"
+                  className="h-7 text-xs flex-1"
+                  onClick={() => setHistoryStatusFilter('SUCCESS')}
+                >
+                  <CheckCircle className="h-3 w-3 mr-1" />
+                  성공
+                </Button>
+                <Button
+                  variant={historyStatusFilter === 'FAILED' ? 'default' : 'ghost'}
+                  size="sm"
+                  className="h-7 text-xs flex-1"
+                  onClick={() => setHistoryStatusFilter('FAILED')}
+                >
+                  <XCircle className="h-3 w-3 mr-1" />
+                  실패
+                </Button>
+              </div>
+            </div>
+
+            {/* History List */}
+            <div className="flex-1 overflow-y-auto">
+              {isHistoryLoading ? (
+                <div className="p-4 space-y-3">
+                  {[1, 2, 3, 4, 5].map((i) => (
+                    <div key={i} className="animate-pulse">
+                      <div className="h-4 bg-muted rounded w-3/4 mb-2" />
+                      <div className="h-3 bg-muted rounded w-1/2" />
+                    </div>
+                  ))}
+                </div>
+              ) : filteredHistory.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full text-center p-4">
+                  <History className="h-12 w-12 text-muted-foreground/50 mb-3" />
+                  <p className="text-sm text-muted-foreground">
+                    {historySearch || historyStatusFilter !== 'all' 
+                      ? '검색 결과가 없습니다' 
+                      : '질문 히스토리가 없습니다'}
+                  </p>
+                </div>
+              ) : (
+                <div className="divide-y">
+                  {filteredHistory.map((item: any) => (
+                    <div
+                      key={item.id}
+                      className="p-3 hover:bg-muted/50 transition-colors group cursor-pointer"
+                      onClick={() => {
+                        setInput(item.naturalQuery);
+                        inputRef.current?.focus();
+                        toast({ title: '질문이 입력창에 복사되었습니다' });
+                      }}
+                    >
+                      <div className="flex items-start gap-2">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">
+                            {item.naturalQuery}
+                          </p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <Badge 
+                              variant={item.status === 'SUCCESS' ? 'default' : 'destructive'}
+                              className="text-[10px] px-1.5 py-0"
+                            >
+                              {item.status === 'SUCCESS' ? '성공' : '실패'}
+                            </Badge>
+                            <span className="text-xs text-muted-foreground flex items-center gap-1">
+                              <Clock className="h-3 w-3" />
+                              {new Date(item.createdAt).toLocaleDateString('ko-KR', {
+                                month: 'short',
+                                day: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })}
+                            </span>
+                          </div>
+                          {item.generatedSql && (
+                            <pre className="text-xs text-muted-foreground mt-1.5 p-1.5 bg-muted rounded truncate font-mono">
+                              {item.generatedSql.slice(0, 60)}...
+                            </pre>
+                          )}
+                        </div>
+                        <ChevronRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0 mt-0.5" />
+                      </div>
+                      
+                      {/* Action Buttons */}
+                      <div className="flex gap-1 mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 text-xs gap-1 flex-1"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setInput(item.naturalQuery);
+                            handleSend();
+                          }}
+                        >
+                          <RotateCcw className="h-3 w-3" />
+                          재실행
+                        </Button>
+                        {item.generatedSql && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 text-xs gap-1 flex-1"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigator.clipboard.writeText(item.generatedSql);
+                              toast({ title: 'SQL이 복사되었습니다' });
+                            }}
+                          >
+                            <Copy className="h-3 w-3" />
+                            SQL 복사
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Sidebar Footer */}
+            <div className="border-t p-3">
+              <p className="text-xs text-muted-foreground text-center">
+                총 {filteredHistory.length}개의 질문
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      {shareQueryId && (
+        <ShareDialog 
+            queryId={shareQueryId} 
+            isOpen={!!shareQueryId} 
+            onClose={() => setShareQueryId(null)} 
+        />
+      )}
+      
+      <FeedbackDialog 
+        isOpen={isFeedbackDialogOpen}
+        onClose={() => {
+            setIsFeedbackDialogOpen(false);
+            setFeedbackQueryId(null);
+        }}
+        onSubmit={async (reason) => {
+            if (feedbackQueryId) {
+                await handleFeedback(feedbackQueryId, 'NEGATIVE', reason);
+            }
+        }}
+      />
+    </MainLayout>
+  );
+}
