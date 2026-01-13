@@ -67,6 +67,7 @@ import {
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { useUserAction, ActionType } from '@/hooks/use-user-action';
 
 interface Message {
   id: string;
@@ -184,6 +185,7 @@ export default function QueryPage() {
   const queryClient = useQueryClient();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const { logAction } = useUserAction();
 
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -268,6 +270,9 @@ export default function QueryPage() {
             : msg
         )
       );
+      if (data.queryId) {
+        logAction(ActionType.QUERY, data.queryId, { question });
+      }
     },
     onError: (error: Error) => {
       setMessages((prev) =>
@@ -297,14 +302,18 @@ export default function QueryPage() {
         )
       );
       toast({ title: '쿼리 실행 완료' });
+      logAction(ActionType.EXECUTE, variables.queryId, { sql: variables.sql });
     },
   });
 
   const addFavoriteMutation = useMutation({
-    mutationFn: (data: { name: string; naturalQuery: string; sqlQuery: string }) =>
+    mutationFn: (data: { name: string; naturalQuery: string; sqlQuery: string; queryId?: string }) =>
       api.addFavorite(data),
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
       toast({ title: '즐겨찾기에 추가되었습니다 ⭐' });
+      if (variables.queryId) {
+        logAction(ActionType.SAVE, variables.queryId);
+      }
     },
     onError: () => {
       toast({ title: '즐겨찾기 추가 실패', variant: 'destructive' });
@@ -316,6 +325,7 @@ export default function QueryPage() {
     try {
       await api.post(`/query/${queryId}/feedback`, { feedback: type, note });
       toast({ title: type === 'POSITIVE' ? "Thanks for your feedback!" : "Feedback submitted." });
+      logAction(ActionType.RATE, queryId, { rating: type, reason: note });
     } catch (e) {
       toast({ title: "Failed to submit feedback", variant: "destructive" });
     }
@@ -746,6 +756,7 @@ export default function QueryPage() {
                                         name: userMsg?.content?.slice(0, 50) || 'My Query',
                                         naturalQuery: userMsg?.content || '',
                                         sqlQuery: message.sql!,
+                                        queryId: message.queryId,
                                       });
                                     }}
                                     title="즐겨찾기에 추가"
@@ -784,7 +795,7 @@ export default function QueryPage() {
                                             variant="ghost"
                                             size="icon"
                                             className="h-6 w-6 text-zinc-400 hover:text-zinc-100"
-                                            onClick={() => setActiveCommentQueryId(activeCommentQueryId === message.queryId ? null : message.queryId)}
+                                            onClick={() => setActiveCommentQueryId(activeCommentQueryId === message.queryId ? null : (message.queryId || null))}
                                             title="Comments"
                                         >
                                             <MessageSquare className="h-3 w-3" />
@@ -793,7 +804,7 @@ export default function QueryPage() {
                                             variant="ghost"
                                             size="icon"
                                             className="h-6 w-6 text-zinc-400 hover:text-zinc-100"
-                                            onClick={() => setShareQueryId(message.queryId)}
+                                            onClick={() => setShareQueryId(message.queryId || null)}
                                             title="Share"
                                         >
                                             <Share2 className="h-3 w-3" />
@@ -936,7 +947,7 @@ export default function QueryPage() {
                               variant="ghost"
                               size="icon"
                               className="h-7 w-7"
-                              onClick={() => handleFeedback(message.queryId!, true)}
+                              onClick={() => handleFeedback(message.queryId!, 'POSITIVE')}
                             >
                               <ThumbsUp className="h-3.5 w-3.5" />
                             </Button>
@@ -944,7 +955,7 @@ export default function QueryPage() {
                               variant="ghost"
                               size="icon"
                               className="h-7 w-7"
-                              onClick={() => handleFeedback(message.queryId!, false)}
+                              onClick={() => handleFeedback(message.queryId!, 'NEGATIVE')}
                             >
                               <ThumbsDown className="h-3.5 w-3.5" />
                             </Button>

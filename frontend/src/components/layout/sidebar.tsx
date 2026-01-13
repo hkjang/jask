@@ -16,6 +16,7 @@ import {
   Layout,
   FileText,
   ShieldAlert,
+  Sparkles,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -38,6 +39,7 @@ const adminItems = [
   { href: '/admin/settings', icon: Settings, label: '설정' },
   { href: '/admin/sample-queries', icon: FileText, label: '샘플 쿼리' },
   { href: '/admin/policies', icon: ShieldAlert, label: '정책 관리' },
+  { href: '/admin/evolution', icon: Sparkles, label: 'AI 진화' },
 ];
 
 export function Sidebar({ className }: SidebarProps) {

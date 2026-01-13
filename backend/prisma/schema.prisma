@@ -234,6 +234,8 @@ model QueryHistory {
   @@index([userId])
   @@index([dataSourceId])
   @@index([createdAt])
+
+  actions           UserActionLog[]
 }
 
 enum QueryStatus {
@@ -297,6 +299,8 @@ model User {
   updatedAt    DateTime @updatedAt
 
   @@index([email])
+
+  actions      UserActionLog[]
 }
 
 enum Role {
@@ -448,4 +452,85 @@ model QueryShare {
   
   @@index([queryHistoryId])
   @@index([sharedToUserId])
+}
+
+// ===========================================
+// AI Evolution - User Actions
+// ===========================================
+enum ActionType {
+  QUERY
+  EDIT
+  EXECUTE
+  RE_ASK
+  RATE
+  SAVE
+  ABANDON
+}
+
+model UserActionLog {
+  id           String     @id @default(uuid())
+  userId       String
+  user         User       @relation(fields: [userId], references: [id])
+  
+  queryId      String?
+  query        QueryHistory? @relation(fields: [queryId], references: [id])
+  
+  actionType   ActionType
+  payload      Json?      // Store details like editedSQL, rating value
+  
+  createdAt    DateTime   @default(now())
+  
+  @@index([userId])
+  @@index([actionType])
+  @@index([createdAt])
+}
+
+// ===========================================
+// AI Evolution - Signals & Candidates
+// ===========================================
+enum CandidateType {
+  PROMPT
+  METADATA
+  MODEL_ROUTING
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  APPLIED
+}
+
+model EvolutionSignal {
+  id           String   @id @default(uuid())
+  targetId     String   // TableId, PromptId, etc.
+  signalType   String   // TRUST_SCORE, ERROR_RATE, MISSING_META
+  score        Float
+  confidence   Float
+  dataset      Json?    // Evidence (e.g. list of failed queries)
+  updatedAt    DateTime @updatedAt
+  
+  @@index([targetId])
+  @@index([signalType])
+}
+
+model EvolutionCandidate {
+  id             String         @id @default(uuid())
+  type           CandidateType
+  targetId       String?        // ID of the item to improve
+  
+  proposedChange Json           // The new content
+  reasoning      String         // Why this change is proposed
+  impactAnalysis Json?          // Expected improvement
+  
+  status         ApprovalStatus @default(PENDING)
+  
+  createdById    String?        // If manually created
+  approverId     String?
+  
+  createdAt      DateTime       @default(now())
+  appliedAt      DateTime?
+  
+  @@index([status])
+  @@index([type])
 }

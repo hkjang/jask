@@ -10,6 +10,7 @@ import { ExecutionModule } from './execution/execution.module';
 import { LLMModule } from './llm/llm.module';
 import { QueryModule } from './query/query.module';
 import { AdminModule } from './admin/admin.module';
+import { EvolutionModule } from './evolution/evolution.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { AdminModule } from './admin/admin.module';
     LLMModule,
     QueryModule,
     AdminModule,
+    EvolutionModule,
   ],
 })
 export class AppModule {}

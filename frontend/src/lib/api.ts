@@ -298,6 +298,37 @@ class ApiClient {
   async deletePromptTemplate(id: string) {
     return this.request(`/admin/prompt-templates/${id}`, { method: 'DELETE' });
   }
+
+  // Policies (Governance)
+  async getPolicies() {
+    return this.request<any[]>('/admin/policies');
+  }
+
+  async createPolicy(data: any) {
+    return this.request('/admin/policies', { method: 'POST', body: data });
+  }
+
+  async updatePolicy(id: string, data: any) {
+    return this.request(`/admin/policies/${id}`, { method: 'PUT', body: data });
+  }
+
+  async deletePolicy(id: string) {
+    return this.request(`/admin/policies/${id}`, { method: 'DELETE' });
+  }
+
+  // Evolution
+  async getEvolutionCandidates(): Promise<any[]> {
+    return this.request('/evolution/candidates');
+  }
+
+  async handleEvolutionCandidate(id: string, action: 'approve' | 'reject') {
+    return this.request(`/evolution/candidates/${id}/${action}`, { method: 'POST' });
+  }
+
+  async getEvolutionStats(): Promise<any> {
+    return this.request('/evolution/stats');
+  }
+
   // Metadata - Extended
   async getSchemaContext(dataSourceId: string) {
     return this.request<{ context: string }>(`/metadata/schema/${dataSourceId}`);
