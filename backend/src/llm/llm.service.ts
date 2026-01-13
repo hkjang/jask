@@ -189,26 +189,29 @@ Rules:
 2. Questions MUST require complex SQL operations (e.g., JOINs, Aggregations, Group By, Subqueries, or Time-series analysis).
 3. Do NOT ask simple "List all..." questions.
 4. Focus on business insights (e.g., trends, top performers, correlation).
-5. Return ONLY a JSON array of strings. Example: ["question 1", "question 2"]
+5. Return ONLY a raw JSON array of strings, no markdown formatting. Example: ["question 1", "question 2"]
 6. diverse the topics.`;
 
     const response = await this.generate({
       prompt: `Based on the following database schema, suggest ${count} complex analytical questions:\n\n${schemaContext}`,
       systemPrompt,
       temperature: 0.7,
-      maxTokens: 1024,
+      maxTokens: 1500,
     });
 
     try {
-      // Clean up markdown code blocks if present
-      const cleanContent = response.content.replace(/```json\n?|\n?```/g, '').trim();
-      const parsed = JSON.parse(cleanContent);
+      // Improved JSON extraction using regex to find array
+      const content = response.content;
+      const jsonMatch = content.match(/\[[\s\S]*\]/);
+      const jsonStr = jsonMatch ? jsonMatch[0] : content;
+      
+      const parsed = JSON.parse(jsonStr);
       if (Array.isArray(parsed)) {
         return parsed;
       }
       return [];
     } catch (e) {
-      this.logger.error(`Failed to parse recommended questions: ${e.message}`);
+      this.logger.error(`Failed to parse recommended questions: ${e.message}. Content preview: ${response.content.substring(0, 500)}`);
       return [];
     }
   }

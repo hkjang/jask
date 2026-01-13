@@ -115,7 +115,10 @@ export class OllamaProvider {
       });
 
       if (!response.ok) {
-        throw new Error(`Ollama Embedding API error: ${response.status}`);
+        if (response.status === 404) {
+          throw new Error(`Embedding model '${config.model}' not found. Please run 'ollama pull ${config.model}' to install it. If it is already installed, try restarting the Ollama service.`);
+        }
+        throw new Error(`Ollama Embedding API error: ${response.status} ${response.statusText}`);
       }
 
       const data = await response.json();

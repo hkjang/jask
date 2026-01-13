@@ -91,10 +91,14 @@ export class QueryService {
     userId: string,
     data: { name: string; naturalQuery: string; sqlQuery: string; dataSourceId?: string },
   ) {
+    const { name, naturalQuery, sqlQuery, dataSourceId } = data;
     return this.prisma.favoriteQuery.create({
       data: {
         userId,
-        ...data,
+        name,
+        naturalQuery,
+        sqlQuery,
+        dataSourceId,
       },
     });
   }
