@@ -2,6 +2,8 @@ import {
   Controller,
   Get,
   Post,
+  Put,
+  Patch,
   Delete,
   Body,
   Param,
@@ -44,19 +46,106 @@ export class QueryController {
     return this.queryService.getQueryById(id);
   }
 
+  // ===========================================
+  // 즐겨찾기
+  // ===========================================
+  
   @Get('favorites')
   @ApiOperation({ summary: '즐겨찾기 목록 조회' })
-  getFavorites(@Request() req: any) {
-    return this.queryService.getFavorites(req.user.id);
+  getFavorites(
+    @Request() req: any,
+    @Query('folderId') folderId?: string,
+    @Query('tag') tag?: string,
+    @Query('dataSourceId') dataSourceId?: string,
+    @Query('sortBy') sortBy?: 'createdAt' | 'useCount' | 'name' | 'displayOrder',
+    @Query('sortOrder') sortOrder?: 'asc' | 'desc',
+  ) {
+    return this.queryService.getFavorites(req.user.id, { folderId, tag, dataSourceId, sortBy, sortOrder });
+  }
+
+  @Get('favorites/stats')
+  @ApiOperation({ summary: '즐겨찾기 통계' })
+  getFavoriteStats(@Request() req: any) {
+    return this.queryService.getFavoriteStats(req.user.id);
+  }
+
+  @Get('favorites/folders')
+  @ApiOperation({ summary: '즐겨찾기 폴더 목록 조회' })
+  getFavoriteFolders(@Request() req: any) {
+    return this.queryService.getFavoriteFolders(req.user.id);
+  }
+
+  @Post('favorites/folders')
+  @ApiOperation({ summary: '즐겨찾기 폴더 생성' })
+  createFavoriteFolder(
+    @Request() req: any,
+    @Body() body: { name: string; color?: string; icon?: string },
+  ) {
+    return this.queryService.createFavoriteFolder(req.user.id, body);
+  }
+
+  @Put('favorites/folders/:id')
+  @ApiOperation({ summary: '즐겨찾기 폴더 수정' })
+  updateFavoriteFolder(
+    @Request() req: any,
+    @Param('id') id: string,
+    @Body() body: { name?: string; color?: string; icon?: string; displayOrder?: number },
+  ) {
+    return this.queryService.updateFavoriteFolder(req.user.id, id, body);
+  }
+
+  @Delete('favorites/folders/:id')
+  @ApiOperation({ summary: '즐겨찾기 폴더 삭제' })
+  deleteFavoriteFolder(@Request() req: any, @Param('id') id: string) {
+    return this.queryService.deleteFavoriteFolder(req.user.id, id);
   }
 
   @Post('favorites')
   @ApiOperation({ summary: '즐겨찾기 추가' })
   addFavorite(
     @Request() req: any,
-    @Body() body: { name: string; naturalQuery: string; sqlQuery: string; dataSourceId?: string },
+    @Body() body: { 
+      name: string; 
+      naturalQuery: string; 
+      sqlQuery: string; 
+      dataSourceId?: string;
+      folderId?: string;
+      tags?: string[];
+      description?: string;
+    },
   ) {
     return this.queryService.addFavorite(req.user.id, body);
+  }
+
+  @Put('favorites/:id')
+  @ApiOperation({ summary: '즐겨찾기 수정' })
+  updateFavorite(
+    @Request() req: any,
+    @Param('id') id: string,
+    @Body() body: { 
+      name?: string; 
+      folderId?: string | null;
+      tags?: string[];
+      description?: string;
+      displayOrder?: number;
+    },
+  ) {
+    return this.queryService.updateFavorite(req.user.id, id, body);
+  }
+
+  @Patch('favorites/:id/use')
+  @ApiOperation({ summary: '즐겨찾기 사용 횟수 증가' })
+  incrementFavoriteUseCount(@Request() req: any, @Param('id') id: string) {
+    return this.queryService.incrementFavoriteUseCount(req.user.id, id);
+  }
+
+  @Put('favorites/reorder')
+  @ApiOperation({ summary: '즐겨찾기 순서 변경' })
+  reorderFavorites(
+    @Request() req: any,
+    @Body() body: { orderedIds: string[] },
+  ) {
+    return this.queryService.reorderFavorites(req.user.id, body.orderedIds);
   }
 
   @Delete('favorites/:id')
@@ -64,6 +153,7 @@ export class QueryController {
   removeFavorite(@Request() req: any, @Param('id') id: string) {
     return this.queryService.removeFavorite(req.user.id, id);
   }
+
 
   @Get('stats')
   @ApiOperation({ summary: '사용 통계' })

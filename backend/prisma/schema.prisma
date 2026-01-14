@@ -289,6 +289,7 @@ model User {
 
   queries      QueryHistory[]
   favorites    FavoriteQuery[]
+  favoriteFolders FavoriteFolder[]
   
   // Collaboration
   comments     QueryComment[]
@@ -327,10 +328,51 @@ model FavoriteQuery {
   naturalQuery String   @db.Text
   sqlQuery     String   @db.Text
   dataSourceId String?
+  
+  // 폴더 분류
+  folderId     String?
+  folder       FavoriteFolder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  
+  // 태그 (배열)
+  tags         String[] @default([])
+  
+  // 사용 통계
+  useCount     Int      @default(0)
+  lastUsedAt   DateTime?
+  
+  // 정렬
+  displayOrder Int      @default(0)
+  
+  // 메모
+  description  String?  @db.Text
 
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
+  @@index([userId])
+  @@index([folderId])
+  @@index([useCount])
+}
+
+// ===========================================
+// 즐겨찾기 폴더
+// ===========================================
+model FavoriteFolder {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  name         String
+  color        String?  // HEX 컬러 코드
+  icon         String?  // Lucide 아이콘 이름
+  displayOrder Int      @default(0)
+  
+  favorites    FavoriteQuery[]
+  
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([userId, name])
   @@index([userId])
 }
 

@@ -235,21 +235,86 @@ class ApiClient {
     return this.request(`/query/history/${id}`);
   }
 
-  async getFavorites() {
-    return this.request('/query/favorites');
+  // ===========================================
+  // 즐겨찾기
+  // ===========================================
+  
+  async getFavorites(options?: { 
+    folderId?: string; 
+    tag?: string; 
+    dataSourceId?: string;
+    sortBy?: 'createdAt' | 'useCount' | 'name' | 'displayOrder';
+    sortOrder?: 'asc' | 'desc';
+  }) {
+    const query = new URLSearchParams();
+    if (options?.folderId) query.set('folderId', options.folderId);
+    if (options?.tag) query.set('tag', options.tag);
+    if (options?.dataSourceId) query.set('dataSourceId', options.dataSourceId);
+    if (options?.sortBy) query.set('sortBy', options.sortBy);
+    if (options?.sortOrder) query.set('sortOrder', options.sortOrder);
+    const queryString = query.toString();
+    return this.request(`/query/favorites${queryString ? `?${queryString}` : ''}`);
   }
 
-  async addFavorite(data: { name: string; naturalQuery: string; sqlQuery: string }) {
+  async addFavorite(data: { 
+    name: string; 
+    naturalQuery: string; 
+    sqlQuery: string;
+    dataSourceId?: string;
+    folderId?: string;
+    tags?: string[];
+    description?: string;
+  }) {
     return this.request('/query/favorites', { method: 'POST', body: data });
+  }
+
+  async updateFavorite(id: string, data: { 
+    name?: string; 
+    folderId?: string | null;
+    tags?: string[];
+    description?: string;
+    displayOrder?: number;
+  }) {
+    return this.request(`/query/favorites/${id}`, { method: 'PUT', body: data });
   }
 
   async removeFavorite(id: string) {
     return this.request(`/query/favorites/${id}`, { method: 'DELETE' });
   }
 
+  async useFavorite(id: string) {
+    return this.request(`/query/favorites/${id}/use`, { method: 'PATCH' });
+  }
+
+  async getFavoriteStats() {
+    return this.request('/query/favorites/stats');
+  }
+
+  async reorderFavorites(orderedIds: string[]) {
+    return this.request('/query/favorites/reorder', { method: 'PUT', body: { orderedIds } });
+  }
+
+  // 즐겨찾기 폴더
+  async getFavoriteFolders() {
+    return this.request('/query/favorites/folders');
+  }
+
+  async createFavoriteFolder(data: { name: string; color?: string; icon?: string }) {
+    return this.request('/query/favorites/folders', { method: 'POST', body: data });
+  }
+
+  async updateFavoriteFolder(id: string, data: { name?: string; color?: string; icon?: string; displayOrder?: number }) {
+    return this.request(`/query/favorites/folders/${id}`, { method: 'PUT', body: data });
+  }
+
+  async deleteFavoriteFolder(id: string) {
+    return this.request(`/query/favorites/folders/${id}`, { method: 'DELETE' });
+  }
+
   async getStats() {
     return this.request('/query/stats');
   }
+
 
   // Admin
   async getDashboard() {
