@@ -92,8 +92,23 @@ export class DataSourcesService {
   async remove(id: string) {
     await this.findOne(id);
 
-    // 연결 캐시에서 제거
-    this.connectionCache.delete(id);
+    // 연결 캐시에서 제거 (Oracle 연결은 close 호출)
+    const cached = this.connectionCache.get(id);
+    if (cached) {
+      try {
+        const dataSource = await this.prisma.dataSource.findUnique({ where: { id } });
+        if (dataSource?.type === 'oracle') {
+          await (cached as oracledb.Connection).close();
+        } else if (dataSource?.type === 'mysql') {
+          await (cached as mysql.Connection).end();
+        } else if (dataSource?.type === 'postgresql') {
+          await (cached as PgClient).end();
+        }
+      } catch (error) {
+        // Ignore close errors
+      }
+      this.connectionCache.delete(id);
+    }
 
     return this.prisma.dataSource.update({
       where: { id },
