@@ -620,3 +620,75 @@ model UserThread {
   @@unique([userId, threadId])
   @@index([userId])
 }
+
+// ===========================================
+// AI 자동 정책 조정 (Automated Policy Adjustment)
+// ===========================================
+
+enum PolicyArea {
+  UX
+  AI
+  PERFORMANCE
+  SECURITY
+  OPERATION
+}
+
+enum ExecutionMethod {
+  IMMEDIATE
+  PHASED
+  AB_TEST
+  ROLLBACK_ENABLED
+}
+
+model PolicyTrigger {
+  id          String   @id @default(uuid())
+  name        String   // e.g. "Low Utilization"
+  metric      String   // e.g. "utilization_score"
+  operator    String   // "LT", "GT"
+  threshold   Float    // e.g. 20 (percent)
+  windowSeconds Int    // e.g. 604800 (7 days)
+  
+  description String?
+  isActive    Boolean  @default(true)
+  
+  rules       PolicyAdjustmentRule[]
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model PolicyAdjustmentRule {
+  id          String   @id @default(uuid())
+  name        String   // e.g. "Stabilization Rule"
+  area        PolicyArea
+  
+  // Matrix Logic
+  triggers    PolicyTrigger[]
+  
+  // Adjustment
+  targetParameter String   // e.g. "auto_execute_enabled"
+  adjustmentValue Json     // e.g. { "value": false }
+  method      ExecutionMethod @default(IMMEDIATE)
+  
+  isActive    Boolean  @default(true)
+  priority    Int      @default(0)
+
+  logs        PolicyAdjustmentLog[]
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model PolicyAdjustmentLog {
+  id          String   @id @default(uuid())
+  ruleId      String
+  rule        PolicyAdjustmentRule @relation(fields: [ruleId], references: [id])
+  
+  previousValue Json
+  newValue      Json
+  reason        String
+  
+  appliedAt   DateTime @default(now())
+  revertedAt  DateTime?
+}
+

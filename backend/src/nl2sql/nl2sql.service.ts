@@ -207,8 +207,25 @@ ${schemaContext}`;
            });
       }
 
-      // 6. 자동 실행 (옵션)
-      if (autoExecute) {
+      // 6. 자동 실행 (옵션 or 정책)
+      let shouldExecute = autoExecute;
+      
+      // Policy Check
+      if (!shouldExecute) {
+           const settings = await this.prisma.systemSettings.findMany({ 
+               where: { key: { in: ['auto_execute_enabled', 'confirm_threshold'] } } 
+           });
+           const autoExecPolicy = settings.find(s => s.key === 'auto_execute_enabled')?.value === true;
+           const threshold = Number(settings.find(s => s.key === 'confirm_threshold')?.value || 80);
+           
+           if (autoExecPolicy && (trustScore * 100) >= threshold) {
+               this.logger.log(`Policy triggered Auto-Execution (Trust: ${trustScore*100} >= ${threshold})`);
+               shouldExecute = true;
+               yield { type: 'policy_log', message: '신뢰도 기준 충족으로 자동 실행됩니다.' };
+           }
+      }
+
+      if (shouldExecute) {
         yield { type: 'step_start', step: 'execution', message: 'SQL 실행 중...' };
         try {
           const result = await this.executionService.execute(
@@ -392,11 +409,24 @@ ${schemaContext}`;
         data: { sqlExplanation: explanation },
       });
 
-      // 6. 자동 실행 (옵션)
+      // 6. 자동 실행 (옵션 or 정책)
       let result: ExecutionResult | undefined;
       let summary: string | undefined;
+      let shouldExecute = autoExecute;
 
-      if (autoExecute) {
+      if (!shouldExecute) {
+           const settings = await this.prisma.systemSettings.findMany({ 
+               where: { key: { in: ['auto_execute_enabled', 'confirm_threshold'] } } 
+           });
+           const autoExecPolicy = settings.find(s => s.key === 'auto_execute_enabled')?.value === true;
+           const threshold = Number(settings.find(s => s.key === 'confirm_threshold')?.value || 80);
+           
+           if (autoExecPolicy && (trustScore * 100) >= threshold) {
+               shouldExecute = true;
+           }
+      }
+
+      if (shouldExecute) {
         try {
           result = await this.executionService.execute(
             dataSourceId,

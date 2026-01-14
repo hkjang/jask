@@ -329,6 +329,43 @@ class ApiClient {
     return this.request('/evolution/stats');
   }
 
+  // Evolution - Policy Adjustment
+  async getPolicyLogs() {
+    return this.request<any[]>('/evolution/policy/logs');
+  }
+
+  async revertPolicyLog(id: string) {
+    return this.request(`/evolution/policy/log/${id}/revert`, { method: 'POST' });
+  }
+
+  async getPolicyMetrics() {
+    return this.request<Record<string, number>>('/evolution/policy/metrics');
+  }
+
+  async createPolicyTrigger(data: any) {
+    return this.request('/evolution/policy/trigger', { method: 'POST', body: data });
+  }
+
+  async updatePolicyTrigger(id: string, data: any) {
+    return this.request(`/evolution/policy/trigger/${id}`, { method: 'PATCH', body: data });
+  }
+
+  async createPolicyRule(data: any) {
+    return this.request('/evolution/policy/rule', { method: 'POST', body: data });
+  }
+
+  async getPolicyRules() {
+    return this.request<any[]>('/evolution/policy/rules');
+  }
+
+  async togglePolicyRule(id: string, isActive: boolean) {
+    return this.request(`/evolution/policy/rule/${id}/toggle`, { method: 'POST', body: { id, isActive } });
+  }
+
+  async runPolicyCheck() {
+    return this.request('/evolution/policy/run-check', { method: 'POST' });
+  }
+
   // Metadata - Extended
   async getSchemaContext(dataSourceId: string) {
     return this.request<{ context: string }>(`/metadata/schema/${dataSourceId}`);

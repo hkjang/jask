@@ -6,11 +6,12 @@ import { UserActionService } from './user-action.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { EvolutionAnalyticsService } from './evolution-analytics.service';
 import { AuthModule } from '../auth/auth.module';
+import { PolicyAdjustmentModule } from './policy-adjustment.module';
 
 @Module({
-  imports: [PrismaModule, AuthModule],
+  imports: [PrismaModule, AuthModule, PolicyAdjustmentModule],
   controllers: [EvolutionController],
   providers: [UserActionService, SignalProcessorService, EvolutionCandidateService, EvolutionAnalyticsService],
-  exports: [UserActionService, SignalProcessorService, EvolutionCandidateService, EvolutionAnalyticsService],
+  exports: [UserActionService, SignalProcessorService, EvolutionCandidateService, EvolutionAnalyticsService, PolicyAdjustmentModule],
 })
 export class EvolutionModule {}
