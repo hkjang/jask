@@ -133,7 +133,7 @@ const ChartView = ({ rows }: { rows: any[] }) => {
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis dataKey={chartData.xKey} />
             <YAxis />
-            <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--background))', borderColor: 'hsl(var(--border))' }} />
+            <RechartsTooltip contentStyle={{ backgroundColor: 'hsl(var(--background))', borderColor: 'hsl(var(--border))' }} />
             <Legend />
             {chartData.dataKeys.map((key, index) => (
               <Line key={key} type="monotone" dataKey={key} stroke={CHART_COLORS[index % CHART_COLORS.length]} strokeWidth={2} dot={{ r: 4 }} />
@@ -157,7 +157,7 @@ const ChartView = ({ rows }: { rows: any[] }) => {
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis dataKey={chartData.xKey} />
             <YAxis />
-            <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--background))', borderColor: 'hsl(var(--border))' }} />
+            <RechartsTooltip contentStyle={{ backgroundColor: 'hsl(var(--background))', borderColor: 'hsl(var(--border))' }} />
             <Legend />
             {chartData.dataKeys.map((key, index) => (
               <Bar key={key} dataKey={key} fill={CHART_COLORS[index % CHART_COLORS.length]} radius={[4, 4, 0, 0]} />
@@ -299,7 +299,7 @@ export default function QueryPage() {
           meta: m.query ? {
              riskLevel: m.query.riskLevel,
              trustScore: m.query.trustScore,
-             trustScore: m.query.trustScore,
+
           } : undefined,
           feedback: m.query?.feedback as 'POSITIVE' | 'NEGATIVE' | undefined
         }));

@@ -28,7 +28,7 @@ export default function MetadataPage() {
       setDataSources(data);
     } catch (error) {
       console.error(error);
-      toast({ title: "Error", description: "Failed to load data sources", variant: "destructive" });
+      toast({ title: "오류", description: "데이터 소스를 불러오는데 실패했습니다.", variant: "destructive" });
     }
   };
 
@@ -46,7 +46,7 @@ export default function MetadataPage() {
       setSchemaContext(context);
     } catch (error) {
       console.error(error);
-      toast({ title: "Error", description: "Failed to load metadata", variant: "destructive" });
+      toast({ title: "오류", description: "메타데이터를 불러오는데 실패했습니다.", variant: "destructive" });
     }
   };
 

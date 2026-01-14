@@ -33,26 +33,26 @@ export function MetadataQualityScore({ score, status, details, onValidate }: Met
                    <div className={`text-2xl font-bold ${score >= 90 ? 'text-green-600' : score >= 50 ? 'text-yellow-600' : 'text-red-500'}`}>
                      {score}
                    </div>
-                   <span className="text-[10px] text-muted-foreground absolute -bottom-3">Score</span>
+                   <span className="text-[10px] text-muted-foreground absolute -bottom-3">점수</span>
                 </div>
             </div>
 
             <div className="flex-1 space-y-2">
                 <div className="flex justify-between items-center">
                     <div className="flex items-center gap-2">
-                        <span className="font-semibold text-sm">Metadata Health</span>
+                        <span className="font-semibold text-sm">메타데이터 상태</span>
                         <StatusBadge status={status} />
                     </div>
                     {onValidate && (
                         <Button variant="ghost" size="sm" onClick={onValidate} className="h-6 text-[10px]">
-                            Re-validate
+                            재검증
                         </Button>
                     )}
                 </div>
                 <Progress value={score} className="h-2" indicatorClassName={colorClass} />
                 <div className="text-xs text-muted-foreground flex gap-3">
                    {/* We could show details if available */}
-                   <span>Detailed description helps AI understanding.</span>
+                   <span>상세 설명은 AI 이해에 도움이 됩니다.</span>
                 </div>
             </div>
             
@@ -62,7 +62,7 @@ export function MetadataQualityScore({ score, status, details, onValidate }: Met
                         <HelpCircle className="w-4 h-4 text-muted-foreground cursor-help" />
                     </TooltipTrigger>
                     <TooltipContent>
-                        <p>Score based on description, columns, relationships.</p>
+                        <p>설명, 컬럼, 관계를 기반으로 한 점수입니다.</p>
                     </TooltipContent>
                 </Tooltip>
             </TooltipProvider>
@@ -73,11 +73,11 @@ export function MetadataQualityScore({ score, status, details, onValidate }: Met
 function StatusBadge({ status }: { status: string }) {
     switch (status) {
         case 'VERIFIED':
-            return <Badge className="bg-green-100 text-green-800 hover:bg-green-100"><CheckCircle className="w-3 h-3 mr-1"/> Verified</Badge>;
+            return <Badge className="bg-green-100 text-green-800 hover:bg-green-100"><CheckCircle className="w-3 h-3 mr-1"/> 검증됨</Badge>;
         case 'PENDING_REVIEW':
-            return <Badge className="bg-yellow-100 text-yellow-800 hover:bg-yellow-100"><AlertCircle className="w-3 h-3 mr-1"/> Review</Badge>;
+            return <Badge className="bg-yellow-100 text-yellow-800 hover:bg-yellow-100"><AlertCircle className="w-3 h-3 mr-1"/> 검토</Badge>;
         case 'DRAFT':
         default:
-            return <Badge variant="outline" className="text-muted-foreground">Draft</Badge>;
+            return <Badge variant="outline" className="text-muted-foreground">초안</Badge>;
     }
 }

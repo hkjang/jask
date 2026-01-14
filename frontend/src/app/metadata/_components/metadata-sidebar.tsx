@@ -111,7 +111,7 @@ export function MetadataSidebar({
       if (!dataSourceToDelete) return;
       try {
           await api.deleteDataSource(dataSourceToDelete.id);
-          toast({ title: "Deleted", description: "Data source deleted." });
+          toast({ title: "삭제됨", description: "데이터 소스가 삭제되었습니다." });
           if (selectedDataSource?.id === dataSourceToDelete.id) {
               onSelectDataSource(null);
           }
@@ -119,7 +119,7 @@ export function MetadataSidebar({
           setDeleteDialogOpen(false);
           setDataSourceToDelete(null);
       } catch (e: any) {
-          toast({ title: "Error", description: e.message || "Failed to delete data source", variant: "destructive" });
+          toast({ title: "오류", description: e.message || "데이터 소스 삭제 실패", variant: "destructive" });
       }
   };
 
@@ -127,9 +127,9 @@ export function MetadataSidebar({
       setIsTesting(true);
       try {
           await api.testConnection(editForm);
-          toast({ title: "Connection Successful", description: "Successfully connected to the database." });
+          toast({ title: "연결 성공", description: "데이터베이스에 성공적으로 연결되었습니다." });
       } catch (e: any) {
-          toast({ title: "Connection Failed", description: e.message || "Failed to connect.", variant: "destructive" });
+          toast({ title: "연결 실패", description: e.message || "연결에 실패했습니다.", variant: "destructive" });
       } finally {
           setIsTesting(false);
       }
@@ -142,20 +142,20 @@ export function MetadataSidebar({
           if (!updateData.password) delete updateData.password; // Don't send empty password if not changed
 
           await api.updateDataSource(editingDataSource.id, updateData);
-          toast({ title: "Updated", description: "Data source updated." });
+          toast({ title: "업데이트됨", description: "데이터 소스가 업데이트되었습니다." });
           setEditDialogOpen(false);
           onRefreshDataSources();
       } catch (e: any) {
           console.error(e);
-          toast({ title: "Error", description: e.message || "Failed to update data source", variant: "destructive" });
+          toast({ title: "오류", description: e.message || "데이터 소스 업데이트 실패", variant: "destructive" });
       }
   };
 
   const handleTranslateMetadata = async (ds: any) => {
     try {
-      toast({ title: "Translation Started", description: "AI is translating metadata. This may take a while." });
+      toast({ title: "번역 시작됨", description: "AI가 메타데이터를 번역 중입니다. 잠시만 기다려주세요." });
       await api.translateMetadata(ds.id);
-      toast({ title: "Translation Completed", description: "Metadata has been translated." });
+      toast({ title: "번역 완료", description: "메타데이터 번역이 완료되었습니다." });
       onRefreshDataSources(); // Refresh to show new descriptions? Or maybe we need to refresh tables explicitly if they are loaded separately.
       // Ideally we should reload tables for the selected datasource if it matches.
       if (selectedDataSource?.id === ds.id) {
@@ -167,7 +167,7 @@ export function MetadataSidebar({
           // onRefreshDataSources might be enough if parent refetches everything.
       }
     } catch (e: any) {
-      toast({ title: "Translation Failed", description: e.message, variant: "destructive" });
+      toast({ title: "번역 실패", description: e.message, variant: "destructive" });
     }
   };
 
@@ -185,9 +185,9 @@ export function MetadataSidebar({
       <div className="p-4 border-b space-y-3">
         <div className="flex justify-between items-center">
             <h2 className="font-semibold flex items-center gap-2">
-            <Database className="h-4 w-4" /> Data Sources
+            <Database className="h-4 w-4" /> 데이터 소스
             </h2>
-            <Button size="icon" variant="ghost" className="h-6 w-6" onClick={handleCreateClick} title="Manage/Create Data Sources">
+            <Button size="icon" variant="ghost" className="h-6 w-6" onClick={handleCreateClick} title="데이터 소스 관리/생성">
                 <Plus className="h-4 w-4" />
             </Button>
         </div>
@@ -211,10 +211,10 @@ export function MetadataSidebar({
                      </DropdownMenuTrigger>
                      <DropdownMenuContent align="end">
                           <DropdownMenuItem onClick={() => handleEditClick(ds)}>
-                              <Pencil className="h-3 w-3 mr-2" /> Edit Info
+                              <Pencil className="h-3 w-3 mr-2" /> 정보 수정
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => handleTranslateMetadata(ds)}>
-                              <Sparkles className="h-3 w-3 mr-2" /> Translate (AI)
+                              <Sparkles className="h-3 w-3 mr-2" /> 번역 (AI)
                           </DropdownMenuItem>
                          <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => confirmDeleteClick(ds)}>
                              <Trash2 className="h-3 w-3 mr-2" /> Delete
@@ -290,20 +290,20 @@ export function MetadataSidebar({
     <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
         <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
             <DialogHeader>
-                <DialogTitle>Edit Data Source</DialogTitle>
-                <DialogDescription>Update the connection details.</DialogDescription>
+                <DialogTitle>데이터 소스 수정</DialogTitle>
+                <DialogDescription>연결 정보를 업데이트합니다.</DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-4">
                 <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
-                        <Label>Name</Label>
+                        <Label>이름</Label>
                         <Input value={editForm.name} onChange={(e) => setEditForm({...editForm, name: e.target.value})} />
                     </div>
                     <div className="space-y-2">
-                        <Label>Type</Label>
+                        <Label>유형</Label>
                         <Select value={editForm.type} onValueChange={(val) => setEditForm({...editForm, type: val})}>
                             <SelectTrigger>
-                                <SelectValue placeholder="Select type" />
+                                <SelectValue placeholder="유형 선택" />
                             </SelectTrigger>
                             <SelectContent>
                                 <SelectItem value="postgresql">PostgreSQL</SelectItem>
@@ -314,50 +314,50 @@ export function MetadataSidebar({
                 </div>
                 
                 <div className="space-y-2">
-                    <Label>Description</Label>
+                    <Label>설명</Label>
                     <Input value={editForm.description} onChange={(e) => setEditForm({...editForm, description: e.target.value})} />
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
-                        <Label>Host</Label>
+                        <Label>호스트</Label>
                         <Input value={editForm.host} onChange={(e) => setEditForm({...editForm, host: e.target.value})} />
                     </div>
                     <div className="space-y-2">
-                        <Label>Port</Label>
+                        <Label>포트</Label>
                         <Input type="number" value={editForm.port} onChange={(e) => setEditForm({...editForm, port: parseInt(e.target.value) || 0})} />
                     </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
-                        <Label>Database</Label>
+                        <Label>데이터베이스</Label>
                         <Input value={editForm.database} onChange={(e) => setEditForm({...editForm, database: e.target.value})} />
                     </div>
                     <div className="space-y-2">
-                        <Label>Schema</Label>
+                        <Label>스키마</Label>
                         <Input value={editForm.schema} onChange={(e) => setEditForm({...editForm, schema: e.target.value})} />
                     </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
-                        <Label>Username</Label>
+                        <Label>사용자명</Label>
                         <Input value={editForm.username} onChange={(e) => setEditForm({...editForm, username: e.target.value})} />
                     </div>
                     <div className="space-y-2">
-                        <Label>Password</Label>
-                        <Input type="password" placeholder="Leave empty to keep current" value={editForm.password} onChange={(e) => setEditForm({...editForm, password: e.target.value})} />
+                        <Label>비밀번호</Label>
+                        <Input type="password" placeholder="현재 비밀번호를 유지하려면 비워두세요" value={editForm.password} onChange={(e) => setEditForm({...editForm, password: e.target.value})} />
                     </div>
                 </div>
             </div>
             <DialogFooter className="flex-col sm:flex-row gap-2">
                  <Button type="button" variant="outline" onClick={handleTestConnection} disabled={isTesting} className="mr-auto">
                     {isTesting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <CheckCircle className="h-4 w-4 mr-2" />}
-                    Test Connection
+                    연결 테스트
                 </Button>
-                <Button variant="ghost" onClick={() => setEditDialogOpen(false)}>Cancel</Button>
-                <Button onClick={handleSaveEdit}>Save Changes</Button>
+                <Button variant="ghost" onClick={() => setEditDialogOpen(false)}>취소</Button>
+                <Button onClick={handleSaveEdit}>변경사항 저장</Button>
             </DialogFooter>
         </DialogContent>
     </Dialog>
@@ -366,17 +366,17 @@ export function MetadataSidebar({
     <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>
             <AlertDialogHeader>
-                <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                <AlertDialogTitle>정말 삭제하시겠습니까?</AlertDialogTitle>
                 <AlertDialogDescription>
-                    This action cannot be undone. This will permanently delete the data source 
+                    이 작업은 되돌릴 수 없습니다. 이 작업은 데이터 소스 
                     <span className="font-semibold text-foreground"> {dataSourceToDelete?.name} </span>
-                    and remove all associated metadata.
+                    및 관련 메타데이터를 영구적으로 삭제합니다.
                 </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogCancel>취소</AlertDialogCancel>
                 <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-                    Delete
+                    삭제
                 </AlertDialogAction>
             </AlertDialogFooter>
         </AlertDialogContent>
