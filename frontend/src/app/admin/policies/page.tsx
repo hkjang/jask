@@ -18,6 +18,7 @@ import {
   DialogTitle,
   DialogTrigger,
   DialogFooter,
+  DialogDescription,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -32,7 +33,7 @@ import {
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/components/ui/use-toast';
-import { Loader2, Plus, Trash2, Edit, ShieldAlert } from 'lucide-react';
+import { Loader2, Plus, Trash2, Edit, ShieldAlert, BookOpen, Code } from 'lucide-react';
 import { MainLayout } from '@/components/layout/main-layout';
 import { api } from '@/lib/api';
 
@@ -49,11 +50,28 @@ interface Policy {
   priority: number;
 }
 
+const POLICY_CONFIG_EXAMPLES: Record<PolicyType, string> = {
+  SQL: '{\n  "maxJoins": 3,\n  "forbiddenKeywords": ["DROP", "TRUNCATE"]\n}',
+  QUERY: '{\n  "blockedTerms": ["salary", "resident_id"],\n  "maxLength": 100\n}',
+  METADATA: '{\n  "restrictedTables": ["audit_logs", "users"],\n  "restrictedColumns": ["ssn", "password"]\n}',
+  MODEL: '{\n  "maxTokens": 1000,\n  "temperature": 0.7\n}',
+  DOMAIN: '{\n  "allowedDomains": ["finance", "hr"]\n}'
+};
+
+const POLICY_CONFIG_DESCRIPTIONS: Record<PolicyType, string> = {
+    SQL: 'SQL 생성 시 제약 조건을 설정합니다.',
+    QUERY: '사용자 질문 입력 시 필터링 규칙을 설정합니다.',
+    METADATA: '접근이 제한된 테이블이나 컬럼을 지정합니다.',
+    MODEL: 'LLM 모델의 파라미터 제한을 설정합니다.',
+    DOMAIN: '특정 비즈니스 도메인에 대한 규칙을 설정합니다.'
+};
+
 export default function PoliciesPage() {
   const { toast } = useToast();
   const [policies, setPolicies] = useState<Policy[]>([]);
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isGuideOpen, setIsGuideOpen] = useState(false);
   const [editingPolicy, setEditingPolicy] = useState<Policy | null>(null);
 
   // Form State
@@ -68,7 +86,7 @@ export default function PoliciesPage() {
     name: '',
     type: 'SQL',
     description: '',
-    config: '{\n  "maxJoins": 3\n}',
+    config: POLICY_CONFIG_EXAMPLES['SQL'],
     isActive: true,
     priority: 0,
   });
@@ -167,11 +185,21 @@ export default function PoliciesPage() {
       name: '',
       type: 'SQL',
       description: '',
-      config: '{\n  "maxJoins": 3\n}',
+      config: POLICY_CONFIG_EXAMPLES['SQL'],
       isActive: true,
       priority: 0,
     });
     setIsDialogOpen(true);
+  };
+
+  const handleTypeChange = (val: PolicyType) => {
+      // If creating a new policy, automatically switch the config template
+      // If editing, keep existing config unless user wants to reset (implementation choice: just switch for new, keep for edit)
+      if (!editingPolicy) {
+          setFormData({ ...formData, type: val, config: POLICY_CONFIG_EXAMPLES[val] });
+      } else {
+          setFormData({ ...formData, type: val });
+      }
   };
 
   return (
@@ -179,19 +207,24 @@ export default function PoliciesPage() {
       <div className="space-y-6 max-h-screen overflow-auto p-6">
         <div className="flex justify-between items-center">
           <div>
-            <h2 className="text-3xl font-bold tracking-tight">Policies & Governance</h2>
+            <h2 className="text-3xl font-bold tracking-tight">정책 및 거버넌스</h2>
             <p className="text-muted-foreground">
               NL2SQL 엔진의 동작 정책과 위험 제어를 관리합니다.
             </p>
           </div>
-          <Button onClick={openCreate}>
-            <Plus className="mr-2 h-4 w-4" /> 정책 추가
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => setIsGuideOpen(true)}>
+              <BookOpen className="mr-2 h-4 w-4" /> 이용 가이드
+            </Button>
+            <Button onClick={openCreate}>
+              <Plus className="mr-2 h-4 w-4" /> 정책 추가
+            </Button>
+          </div>
         </div>
 
         <Card>
           <CardHeader>
-            <CardTitle>Active Policies</CardTitle>
+            <CardTitle>활성 정책 목록</CardTitle>
             <CardDescription>
               현재 적용 중인 거버넌스 정책 목록입니다. 높은 우선순위(Priority) 정책이 먼저 검사됩니다.
             </CardDescription>
@@ -203,12 +236,12 @@ export default function PoliciesPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Priority</TableHead>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Config Summary</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
+                    <TableHead>우선순위</TableHead>
+                    <TableHead>정책명</TableHead>
+                    <TableHead>유형</TableHead>
+                    <TableHead>설정 요약</TableHead>
+                    <TableHead>상태</TableHead>
+                    <TableHead className="text-right">관리</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -257,6 +290,7 @@ export default function PoliciesPage() {
           </CardContent>
         </Card>
 
+        {/* Create/Edit Policy Dialog */}
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <DialogContent className="max-w-xl">
             <DialogHeader>
@@ -264,7 +298,7 @@ export default function PoliciesPage() {
             </DialogHeader>
             <div className="grid gap-4 py-4">
               <div className="grid grid-cols-4 items-center gap-4">
-                <Label className="text-right">Name</Label>
+                <Label className="text-right">정책명</Label>
                 <Input
                   className="col-span-3"
                   value={formData.name}
@@ -272,10 +306,10 @@ export default function PoliciesPage() {
                 />
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
-                <Label className="text-right">Type</Label>
+                <Label className="text-right">유형</Label>
                 <Select
                   value={formData.type}
-                  onValueChange={(val: PolicyType) => setFormData({...formData, type: val})}
+                  onValueChange={handleTypeChange}
                 >
                   <SelectTrigger className="col-span-3">
                     <SelectValue />
@@ -284,11 +318,13 @@ export default function PoliciesPage() {
                     <SelectItem value="SQL">SQL Logic</SelectItem>
                     <SelectItem value="QUERY">User Query (Keyword)</SelectItem>
                     <SelectItem value="METADATA">Metadata Access</SelectItem>
+                    <SelectItem value="MODEL">Model Config</SelectItem>
+                    <SelectItem value="DOMAIN">Domain Specific</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
-                <Label className="text-right">Priority</Label>
+                <Label className="text-right">우선순위</Label>
                 <Input
                   type="number"
                   className="col-span-3"
@@ -297,7 +333,7 @@ export default function PoliciesPage() {
                 />
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
-                <Label className="text-right">Status</Label>
+                <Label className="text-right">상태</Label>
                 <div className="col-span-3 flex items-center gap-2">
                     <Switch
                         checked={formData.isActive}
@@ -307,7 +343,7 @@ export default function PoliciesPage() {
                 </div>
               </div>
               <div className="grid grid-cols-4 gap-4">
-                <Label className="text-right mt-2">Description</Label>
+                <Label className="text-right mt-2">설명</Label>
                 <Textarea
                   className="col-span-3"
                   value={formData.description}
@@ -315,22 +351,81 @@ export default function PoliciesPage() {
                 />
               </div>
               <div className="grid grid-cols-4 gap-4">
-                <Label className="text-right mt-2">Config (JSON)</Label>
+                <Label className="text-right mt-2">설정 (JSON)</Label>
                 <div className="col-span-3">
                   <Textarea
                       className="font-mono text-xs min-h-[150px]"
                       value={formData.config}
                       onChange={(e) => setFormData({...formData, config: e.target.value})}
                   />
-                  <p className="text-xs text-muted-foreground mt-1">
-                      예시: &#123; "maxJoins": 3, "forbiddenKeywords": ["DROP"] &#125;
+                  <div className="text-xs text-muted-foreground mt-2 bg-muted p-2 rounded border">
+                      <p className="font-semibold mb-1">추천 설정 ({formData.type}):</p>
+                      <pre className="whitespace-pre-wrap font-mono">
+                          {POLICY_CONFIG_EXAMPLES[formData.type]}
+                      </pre>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsDialogOpen(false)}>취소</Button>
+              <Button onClick={handleSubmit}>저장</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* How it Works / Guide Dialog */}
+        <Dialog open={isGuideOpen} onOpenChange={setIsGuideOpen}>
+          <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>정책 관리 가이드</DialogTitle>
+              <DialogDescription>
+                NL2SQL 엔진의 품질과 안전성을 보장하기 위해 다양한 정책을 설정할 수 있습니다.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-6 py-2 text-sm">
+              <div className="grid gap-4">
+                <div className="bg-muted/50 p-4 rounded-md border">
+                    <h4 className="font-semibold text-base mb-2">설정 가이드 (Configuration Examples)</h4>
+                    <div className="space-y-4">
+                        {Object.entries(POLICY_CONFIG_EXAMPLES).map(([type, example]) => (
+                            <div key={type} className="grid grid-cols-1 md:grid-cols-4 gap-2 border-b last:border-0 pb-3 last:pb-0">
+                                <div className="md:col-span-1">
+                                    <Badge variant="outline" className="mb-1">{type}</Badge>
+                                    <p className="text-xs text-muted-foreground">{POLICY_CONFIG_DESCRIPTIONS[type as PolicyType]}</p>
+                                </div>
+                                <div className="md:col-span-3">
+                                    <pre className="bg-background border p-2 rounded text-xs overflow-x-auto">
+                                        {example}
+                                    </pre>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                <div className="grid gap-2">
+                  <h4 className="font-medium flex items-center gap-2">
+                    <ShieldAlert className="h-4 w-4" /> 정책 상세 설명
+                  </h4>
+                  <ul className="list-disc pl-5 text-muted-foreground space-y-1">
+                    <li><span className="font-semibold">SQL Logic</span>: 조인 횟수 제한, 특정 구문 금지 등 SQL 생성 엔진의 행동을 제어합니다.</li>
+                    <li><span className="font-semibold">User Query</span>: 사용자 입력 단계에서 금지어 포함 여부를 검사하여 쿼리 생성을 조기에 차단합니다.</li>
+                    <li><span className="font-semibold">Metadata Access</span>: LLM에게 보여주지 말아야 할 민감한 테이블이나 컬럼 정보를 필터링합니다.</li>
+                  </ul>
+                </div>
+
+                <div className="bg-blue-50 dark:bg-blue-950/30 p-3 rounded-md">
+                  <h4 className="font-medium mb-1 text-blue-700 dark:text-blue-300">💡 우선순위 (Priority) 규칙</h4>
+                  <p className="text-muted-foreground">
+                    정책은 우선순위 숫자가 <span className="font-bold text-foreground">높은 순서대로</span> 적용됩니다. 
+                    예를 들어, <code>Priority: 10</code> 정책이 <code>Priority: 1</code> 정책보다 먼저 평가되며, 상충되는 내용이 있을 경우 높은 우선순위의 설정이 우선합니다.
                   </p>
                 </div>
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setIsDialogOpen(false)}>Cancel</Button>
-              <Button onClick={handleSubmit}>Save Policy</Button>
+              <Button onClick={() => setIsGuideOpen(false)}>확인</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
