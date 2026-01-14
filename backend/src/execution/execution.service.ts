@@ -4,6 +4,7 @@ import { DataSourcesService } from '../datasources/datasources.service';
 import { ValidationService } from '../validation/validation.service';
 import { Client as PgClient } from 'pg';
 import * as mysql from 'mysql2/promise';
+import oracledb from 'oracledb';
 
 export interface ExecutionResult {
   rows: any[];
@@ -71,6 +72,14 @@ export class ExecutionService {
           timeout,
           startTime,
         );
+      } else if (dataSource.type === 'oracle') {
+        return await this.executeOracle(
+          client as oracledb.Connection,
+          sanitizedSql,
+          maxRows,
+          timeout,
+          startTime,
+        );
       }
 
       throw new BadRequestException(`지원하지 않는 데이터베이스 타입: ${dataSource.type}`);
@@ -100,6 +109,15 @@ export class ExecutionService {
       } else if (dataSource.type === 'mysql') {
         const [rows] = await (client as mysql.Connection).query(`EXPLAIN ${sql}`) as any;
         return rows;
+      } else if (dataSource.type === 'oracle') {
+        // Oracle EXPLAIN PLAN
+        await (client as oracledb.Connection).execute(`EXPLAIN PLAN FOR ${sql}`);
+        const result = await (client as oracledb.Connection).execute(
+          `SELECT * FROM TABLE(DBMS_XPLAN.DISPLAY)`,
+          [],
+          { outFormat: oracledb.OUT_FORMAT_OBJECT }
+        );
+        return result.rows;
       }
     } catch (error) {
       this.logger.error(`EXPLAIN 실패: ${error.message}`);
@@ -162,6 +180,35 @@ export class ExecutionService {
     };
   }
 
+  private async executeOracle(
+    client: oracledb.Connection,
+    sql: string,
+    maxRows: number,
+    timeout: number,
+    startTime: number,
+  ): Promise<ExecutionResult> {
+    // Oracle doesn't have session-level timeout, we use fetchArraySize for row limit
+    const result = await client.execute(sql, [], {
+      outFormat: oracledb.OUT_FORMAT_OBJECT,
+      maxRows: maxRows + 1, // +1 to detect truncation
+    });
+
+    const executionTime = Date.now() - startTime;
+    const rows = result.rows || [];
+    const truncated = rows.length > maxRows;
+
+    return {
+      rows: rows.slice(0, maxRows),
+      rowCount: rows.length,
+      fields: result.metaData?.map((m: any) => ({
+        name: m.name,
+        type: this.mapOracleType(m.dbType),
+      })) || [],
+      executionTime,
+      truncated,
+    };
+  }
+
   private mapPgType(typeId: number): string {
     // PostgreSQL 타입 ID 매핑
     const typeMap: Record<number, string> = {
@@ -180,6 +227,22 @@ export class ExecutionService {
       3802: 'jsonb',
     };
     return typeMap[typeId] || 'unknown';
+  }
+
+  private mapOracleType(dbType: number): string {
+    // Oracle DB Type mapping
+    const typeMap: Record<number, string> = {
+      1: 'varchar2',
+      2: 'number',
+      12: 'date',
+      96: 'char',
+      112: 'clob',
+      113: 'blob',
+      180: 'timestamp',
+      181: 'timestamp with time zone',
+      231: 'timestamp with local time zone',
+    };
+    return typeMap[dbType] || 'unknown';
   }
 
   private formatError(error: any): string {

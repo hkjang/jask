@@ -6,9 +6,9 @@ export class CreateDataSourceDto {
   @IsString()
   name: string;
 
-  @ApiProperty({ example: 'postgresql', enum: ['postgresql', 'mysql'] })
+  @ApiProperty({ example: 'postgresql', enum: ['postgresql', 'mysql', 'oracle'] })
   @IsString()
-  @IsIn(['postgresql', 'mysql'])
+  @IsIn(['postgresql', 'mysql', 'oracle'])
   type: string;
 
   @ApiProperty({ example: 'localhost' })

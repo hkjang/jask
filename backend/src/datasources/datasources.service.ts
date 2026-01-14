@@ -4,8 +4,9 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateDataSourceDto, UpdateDataSourceDto } from './dto/datasources.dto';
 import { Client as PgClient } from 'pg';
 import * as mysql from 'mysql2/promise';
+import oracledb from 'oracledb';
 
-export type DbConnection = PgClient | mysql.Connection;
+export type DbConnection = PgClient | mysql.Connection | oracledb.Connection;
 
 @Injectable()
 export class DataSourcesService {
@@ -123,6 +124,14 @@ export class DataSourcesService {
         });
         await connection.query('SELECT 1');
         await connection.end();
+      } else if (config.type === 'oracle') {
+        const connection = await oracledb.getConnection({
+          user: config.username,
+          password: config.password,
+          connectString: `${config.host}:${config.port}/${config.schema || config.database}`,
+        });
+        await connection.execute('SELECT 1 FROM DUAL');
+        await connection.close();
       } else {
         throw new BadRequestException(`지원하지 않는 데이터베이스 타입: ${config.type}`);
       }
@@ -162,6 +171,14 @@ export class DataSourcesService {
       });
       this.connectionCache.set(dataSourceId, connection);
       return { client: connection, type: 'mysql' };
+    } else if (dataSource.type === 'oracle') {
+      const connection = await oracledb.getConnection({
+        user: dataSource.username,
+        password: dataSource.password,
+        connectString: `${dataSource.host}:${dataSource.port}/${dataSource.schema || dataSource.database}`,
+      });
+      this.connectionCache.set(dataSourceId, connection);
+      return { client: connection, type: 'oracle' };
     }
 
     throw new BadRequestException(`지원하지 않는 데이터베이스 타입: ${dataSource.type}`);

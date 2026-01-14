@@ -199,11 +199,19 @@ export default function DataSourcesPage() {
                   <label className="text-sm font-medium">타입</label>
                   <select
                     value={formData.type}
-                    onChange={(e) => setFormData({ ...formData, type: e.target.value })}
+                    onChange={(e) => {
+                      const newType = e.target.value;
+                      let newPort = formData.port;
+                      if (newType === 'oracle') newPort = 1521;
+                      else if (newType === 'postgresql') newPort = 5432;
+                      else if (newType === 'mysql') newPort = 3306;
+                      setFormData({ ...formData, type: newType, port: newPort });
+                    }}
                     className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                   >
                     <option value="postgresql">PostgreSQL</option>
                     <option value="mysql">MySQL</option>
+                    <option value="oracle">Oracle</option>
                   </select>
                 </div>
                 <div className="space-y-2">
@@ -229,10 +237,11 @@ export default function DataSourcesPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">스키마</label>
+                  <label className="text-sm font-medium">{formData.type === 'oracle' ? '서비스 이름' : '스키마'}</label>
                   <Input
                     value={formData.schema}
                     onChange={(e) => setFormData({ ...formData, schema: e.target.value })}
+                    placeholder={formData.type === 'oracle' ? 'ORCL' : 'public'}
                   />
                 </div>
                 <div className="space-y-2">
@@ -340,13 +349,20 @@ export default function DataSourcesPage() {
                     </div>
                     <div className="space-y-2">
                       <Label>타입</Label>
-                        <Select value={editForm.type} onValueChange={(val) => setEditForm({...editForm, type: val})}>
+                        <Select value={editForm.type} onValueChange={(val) => {
+                          let newPort = editForm.port;
+                          if (val === 'oracle') newPort = 1521;
+                          else if (val === 'postgresql') newPort = 5432;
+                          else if (val === 'mysql') newPort = 3306;
+                          setEditForm({...editForm, type: val, port: newPort});
+                        }}>
                             <SelectTrigger>
                                 <SelectValue placeholder="타입 선택" />
                             </SelectTrigger>
                             <SelectContent>
                                 <SelectItem value="postgresql">PostgreSQL</SelectItem>
                                 <SelectItem value="mysql">MySQL</SelectItem>
+                                <SelectItem value="oracle">Oracle</SelectItem>
                             </SelectContent>
                         </Select>
                     </div>
@@ -373,10 +389,11 @@ export default function DataSourcesPage() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label>스키마</Label>
+                      <Label>{editForm.type === 'oracle' ? '서비스 이름' : '스키마'}</Label>
                       <Input
                         value={editForm.schema}
                         onChange={(e) => setEditForm({ ...editForm, schema: e.target.value })}
+                        placeholder={editForm.type === 'oracle' ? 'ORCL' : 'public'}
                       />
                     </div>
                     <div className="space-y-2">

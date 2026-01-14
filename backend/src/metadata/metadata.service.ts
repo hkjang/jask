@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { DataSourcesService } from '../datasources/datasources.service';
 import { Client as PgClient } from 'pg';
 import * as mysql from 'mysql2/promise';
+import oracledb from 'oracledb';
 import { LLMService } from '../llm/llm.service';
 import { 
   UpdateTableMetadataDto, 
@@ -56,6 +57,10 @@ export class MetadataService {
       allColumns = result.columns;
     } else if (type === 'mysql' || dataSource.type === 'mysql') {
       const result = await this.syncMySQLMetadata(client as mysql.Connection, dataSource.database);
+      tables = result.tables;
+      allColumns = result.columns;
+    } else if (type === 'oracle' || dataSource.type === 'oracle') {
+      const result = await this.syncOracleMetadata(client as oracledb.Connection, dataSource.schema || dataSource.username?.toUpperCase());
       tables = result.tables;
       allColumns = result.columns;
     }
@@ -252,6 +257,77 @@ export class MetadataService {
     return { tables, columns };
   }
 
+  private async syncOracleMetadata(client: oracledb.Connection, schema: string) {
+    // Oracle: Get table list from USER_TABLES or ALL_TABLES
+    const tablesResult = await client.execute(
+      `SELECT 
+         :schema as schema_name,
+         TABLE_NAME as table_name,
+         NUM_ROWS as row_count
+       FROM ALL_TABLES 
+       WHERE OWNER = :schema`,
+      { schema: schema?.toUpperCase() || '' },
+      { outFormat: oracledb.OUT_FORMAT_OBJECT }
+    );
+
+    const tables: TableInfo[] = (tablesResult.rows || []).map((row: any) => ({
+      schemaName: row.SCHEMA_NAME || schema,
+      tableName: row.TABLE_NAME,
+      rowCount: row.ROW_COUNT,
+    }));
+
+    // Get column info
+    const columnsResult = await client.execute(
+      `SELECT 
+         c.TABLE_NAME,
+         c.COLUMN_NAME,
+         c.DATA_TYPE,
+         c.NULLABLE,
+         CASE WHEN pk.COLUMN_NAME IS NOT NULL THEN 'Y' ELSE 'N' END as IS_PK,
+         CASE WHEN fk.COLUMN_NAME IS NOT NULL THEN 'Y' ELSE 'N' END as IS_FK,
+         fk.R_TABLE_NAME as REFERENCED_TABLE,
+         fk.R_COLUMN_NAME as REFERENCED_COLUMN
+       FROM ALL_TAB_COLUMNS c
+       LEFT JOIN (
+         SELECT acc.TABLE_NAME, acc.COLUMN_NAME
+         FROM ALL_CONS_COLUMNS acc
+         JOIN ALL_CONSTRAINTS ac ON acc.CONSTRAINT_NAME = ac.CONSTRAINT_NAME AND acc.OWNER = ac.OWNER
+         WHERE ac.CONSTRAINT_TYPE = 'P' AND ac.OWNER = :schema
+       ) pk ON c.TABLE_NAME = pk.TABLE_NAME AND c.COLUMN_NAME = pk.COLUMN_NAME
+       LEFT JOIN (
+         SELECT acc.TABLE_NAME, acc.COLUMN_NAME, 
+                acc2.TABLE_NAME as R_TABLE_NAME, acc2.COLUMN_NAME as R_COLUMN_NAME
+         FROM ALL_CONS_COLUMNS acc
+         JOIN ALL_CONSTRAINTS ac ON acc.CONSTRAINT_NAME = ac.CONSTRAINT_NAME AND acc.OWNER = ac.OWNER
+         JOIN ALL_CONS_COLUMNS acc2 ON ac.R_CONSTRAINT_NAME = acc2.CONSTRAINT_NAME AND ac.R_OWNER = acc2.OWNER
+         WHERE ac.CONSTRAINT_TYPE = 'R' AND ac.OWNER = :schema
+       ) fk ON c.TABLE_NAME = fk.TABLE_NAME AND c.COLUMN_NAME = fk.COLUMN_NAME
+       WHERE c.OWNER = :schema
+       ORDER BY c.TABLE_NAME, c.COLUMN_ID`,
+      { schema: schema?.toUpperCase() || '' },
+      { outFormat: oracledb.OUT_FORMAT_OBJECT }
+    );
+
+    const columns = new Map<string, ColumnInfo[]>();
+    for (const row of (columnsResult.rows || []) as any[]) {
+      const key = `${schema}.${row.TABLE_NAME}`;
+      if (!columns.has(key)) {
+        columns.set(key, []);
+      }
+      columns.get(key)!.push({
+        columnName: row.COLUMN_NAME,
+        dataType: row.DATA_TYPE,
+        isNullable: row.NULLABLE === 'Y',
+        isPrimaryKey: row.IS_PK === 'Y',
+        isForeignKey: row.IS_FK === 'Y',
+        referencedTable: row.REFERENCED_TABLE,
+        referencedColumn: row.REFERENCED_COLUMN,
+      });
+    }
+
+    return { tables, columns };
+  }
+
   async getTables(dataSourceId: string) {
     return this.prisma.tableMetadata.findMany({
       where: { dataSourceId, isExcluded: false },
@@ -295,6 +371,14 @@ export class MetadataService {
         const query = `SELECT * FROM ${tableName} LIMIT ?`;
         const [rows] = await (client as mysql.Connection).query(query, [limit]);
         return rows;
+      } else if (type === 'oracle') {
+        const query = `SELECT * FROM "${schemaName}"."${tableName}" WHERE ROWNUM <= :limit`;
+        const result = await (client as oracledb.Connection).execute(
+          query,
+          { limit },
+          { outFormat: oracledb.OUT_FORMAT_OBJECT }
+        );
+        return result.rows || [];
       }
     } catch (error) {
       this.logger.error(`Preview failed for ${tableName}: ${error.message}`);
