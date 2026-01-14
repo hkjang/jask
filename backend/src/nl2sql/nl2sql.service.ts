@@ -4,13 +4,14 @@ import { MetadataService } from '../metadata/metadata.service';
 import { LLMService } from '../llm/llm.service';
 import { ValidationService, ValidationResult } from '../validation/validation.service';
 import { ExecutionService, ExecutionResult } from '../execution/execution.service';
-import { QueryStatus, RiskLevel, PolicyType } from '@prisma/client';
+import { QueryStatus, RiskLevel } from '@prisma/client';
 
 export interface NL2SQLRequest {
   dataSourceId: string;
   question: string;
   userId: string;
   autoExecute?: boolean;
+  threadId?: string;
 }
 
 export interface NL2SQLResponse {
@@ -37,9 +38,10 @@ export class NL2SQLService {
   ) {}
 
   async *generateAndExecuteStream(request: NL2SQLRequest): AsyncGenerator<any> {
-    const { dataSourceId, question, userId, autoExecute } = request;
+    const { dataSourceId, question, userId, autoExecute, threadId } = request;
 
     yield { type: 'step_start', step: 'schema', message: '스키마 컨텍스트 조회 (Vector Search) 중...' };
+    
     // Use Vector Search for scalable schema retrieval
     const schemaContext = await this.metadataService.searchSchemaContext(dataSourceId, question);
     if (!schemaContext || schemaContext.trim() === '') {
@@ -54,7 +56,7 @@ export class NL2SQLService {
     
     let dbSpecificRules = '';
     if (dbType.toLowerCase().includes('postgres')) {
-      dbSpecificRules = '6. You MUST wrap all table and column names in DOUBLE QUOTES (e.g. "TableName", "ColumnName"). This is CRITICAL for PostgreSQL.';
+      dbSpecificRules = '6. You MUST wrap ALL table and column names in DOUBLE QUOTES (e.g. "TableName", "rowCount", "userId"). PostgreSQL is case-sensitive for mixed-case identifiers. Do NOT use unquoted camelCase.';
     } else if (dbType.toLowerCase().includes('mysql') || dbType.toLowerCase().includes('mariadb')) {
       dbSpecificRules = '6. You MUST wrap all table and column names in BACKTICKS (e.g. `TableName`, `ColumnName`).';
     }
@@ -70,7 +72,22 @@ export class NL2SQLService {
     });
     yield { type: 'history_created', queryId: queryHistory.id };
 
+    let promptWithHistory = question;
+    if (threadId) {
+      const thread = await this.prisma.thread.findUnique({
+        where: { id: threadId },
+        include: { messages: { orderBy: { timestamp: 'desc' }, take: 5 } },
+      });
+
+      if (thread) {
+        // Reverse to get chronological order
+        const history = [...thread.messages].reverse().map(m => `${m.role === 'USER' ? 'User' : 'Assistant'}: ${m.content}`).join('\n');
+        promptWithHistory = `Conversation History:\n${history}\n\nCurrent Question: ${question}`;
+      }
+    }
+
     let generatedSql = '';
+    let explanation = '';
     let tokens = { prompt: 0, completion: 0, total: 0 };
 
     try {
@@ -83,12 +100,13 @@ Rules:
 2. Never use DELETE, UPDATE, INSERT, DROP, TRUNCATE, ALTER
 3. Always include LIMIT clause (max 1000)
 4. Return ONLY the SQL query, no explanations
+5. If the question refers to previous context, use the conversation history to infer the correct query.
 ${dbSpecificRules}
 Database Schema:
 ${schemaContext}`;
 
       const sqlStream = this.llmService.generateStream({
-        prompt: question,
+        prompt: promptWithHistory,
         systemPrompt: sqlSystemPrompt,
         temperature: 0.1,
         maxTokens: 2048,
@@ -106,9 +124,6 @@ ${schemaContext}`;
         }
       }
 
-      generatedSql = this.llmService['extractSQL'](generatedSql); // Access private method or refactor to public. Assuming extractSQL logic is needed.
-      // Since extractSQL is private, I should replicate it or make it public. 
-      // For now I'll implement simple cleanup here locally or cast to any.
       generatedSql = generatedSql.replace(/```sql\n?([\s\S]*?)\n?```/i, '$1').replace(/```\n?([\s\S]*?)\n?```/, '$1').trim();
       const selectMatch = generatedSql.match(/SELECT[\s\S]+?(?:;|$)/i);
       if (selectMatch) generatedSql = selectMatch[0].replace(/;$/, '').trim();
@@ -118,7 +133,7 @@ ${schemaContext}`;
       const validation = this.validationService.validate(generatedSql);
       
       const risk = this.analyzeRisk(generatedSql);
-      const trustScore = this.calculateTrustScore(generatedSql);
+      let trustScore = this.calculateTrustScore(generatedSql);
       const policyCheck = await this.checkGovernance(generatedSql, userId);
 
       let status = validation.isValid ? QueryStatus.VALIDATING : QueryStatus.BLOCKED;
@@ -145,7 +160,7 @@ ${schemaContext}`;
 
       // 5. SQL 설명 생성 (Streaming)
       yield { type: 'step_start', step: 'explanation', message: 'SQL 설명 생성 중...' };
-      let explanation = '';
+      
       const explainSystemPrompt = `You are an SQL expert. Explain the given SQL query in simple Korean language.
 Database Schema:
 ${schemaContext}`;
@@ -174,6 +189,23 @@ ${schemaContext}`;
       });
 
       yield { type: 'total_usage', usage: tokens };
+      
+      // Save assistant response to Thread (if valid)
+      if (threadId && validation.isValid) {
+           await this.prisma.message.create({
+               data: {
+                   threadId,
+                   role: 'ASSISTANT',
+                   content: `### SQL Generated\n\`\`\`sql\n${generatedSql}\n\`\`\`\n\n### Explanation\n${explanation}`,
+                   queryId: queryHistory.id
+               }
+           });
+           
+           await this.prisma.thread.update({
+             where: { id: threadId },
+             data: { updatedAt: new Date() }
+           });
+      }
 
       // 6. 자동 실행 (옵션)
       if (autoExecute) {
@@ -192,33 +224,85 @@ ${schemaContext}`;
               status: QueryStatus.SUCCESS,
               executionTime: result.executionTime,
               rowCount: result.rowCount,
+              trustScore: 1.0, // Proven by execution
             },
           });
+          
+          // trustScore is local here, assuming it was defined as 'let' or we update the yielded object directly
+          // We need to ensure 'trustScore' variable is mutable.
+          // However, looking at the code flow, trustScore was defined at line 293 (in generateAndExecute) or 136 (in stream).
+          // If it's 'generateAndExecuteStream', it's defined at line 136. I will check line 136 separately.
+          // For now, I will fix the 'where' clause here and assume I need to fix variable declaration in another chunk if needed.
+          // Wait, the error said "Cannot assign to 'trustScore' because it is a constant".
+          // So I must find where trustScore is defined and change it to let.
+          
+          trustScore = 1.0; // Update local for stream output
 
           yield { type: 'execution_result', result };
         } catch (error) {
-          await this.prisma.queryHistory.update({
-            where: { id: queryHistory.id },
-            data: { status: QueryStatus.FAILED, errorMessage: error.message },
-          });
-          yield { type: 'error', message: `실행 실패: ${error.message}` };
+          // Auto-correction attempt
+          this.logger.warn(`Execution failed, attempting auto-fix. Error: ${error.message}`);
+          yield { type: 'step_start', step: 'auto_fix', message: 'SQL 실행 오류 발생, 자동 수정 시도 중...' };
+          
+          try {
+              const fixedSql = await this.llmService.fixSQL(validation.sanitizedSql || generatedSql, error.message, schemaContext);
+              this.logger.log(`Auto-fixed SQL: ${fixedSql}`);
+              
+              const retryResult = await this.executionService.execute(
+                dataSourceId,
+                fixedSql,
+                { mode: 'execute' }
+              );
+
+              // Update with fixed SQL
+              await this.prisma.queryHistory.update({
+                where: { id: queryHistory.id },
+                data: {
+                  finalSql: fixedSql,
+                  status: QueryStatus.SUCCESS,
+                  executionTime: retryResult.executionTime,
+                  rowCount: retryResult.rowCount,
+                  trustScore: 1.0, // Proven by execution
+                },
+              });
+              
+              trustScore = 1.0;
+              generatedSql = fixedSql; // Update local for final output
+              
+              // Update Chat Message content if exists
+              const message = await this.prisma.message.findFirst({
+                  where: { queryId: queryHistory.id }
+              });
+              
+              if (message) {
+                  const newContent = message.content.replace(/```sql[\s\S]*?```/, `\`\`\`sql\n${fixedSql}\n\`\`\``) + 
+                                     `\n\n> **알림:** 초기 쿼리 실행이 실패하여, 자동으로 수정된 쿼리로 재실행되었습니다.`;
+                  
+                  await this.prisma.message.update({
+                      where: { id: message.id },
+                      data: { content: newContent }
+                  });
+              }
+
+              yield { type: 'execution_result', result: retryResult };
+              yield { type: 'step_start', step: 'auto_fix_success', message: 'SQL 자동 수정 및 실행 성공!' };
+
+          } catch (retryError) {
+              await this.prisma.queryHistory.update({
+                where: { id: queryHistory.id },
+                data: { status: QueryStatus.FAILED, errorMessage: error.message }, // Keep original error if fix fails
+              });
+              yield { type: 'error', message: `실행 실패: ${error.message}` };
+          }
         }
-      } else {
-         yield { 
-            type: 'done', 
-            queryId: queryHistory.id, 
-            sql: generatedSql,
-            trustScore,
-            riskLevel: risk.level
-         };
       }
       
       yield { 
          type: 'done', 
          queryId: queryHistory.id, 
          sql: generatedSql,
-            trustScore,
-            riskLevel: risk.level
+         trustScore,
+         riskLevel: risk.level
       };
 
     } catch (error) {
@@ -232,7 +316,7 @@ ${schemaContext}`;
   }
 
   async generateAndExecute(request: NL2SQLRequest): Promise<NL2SQLResponse> {
-    const { dataSourceId, question, userId, autoExecute = false } = request;
+    const { dataSourceId, question, userId, autoExecute = false, threadId } = request;
 
     // 1. 스키마 컨텍스트 조회
     const schemaContext = await this.metadataService.getSchemaContext(dataSourceId);
@@ -266,14 +350,14 @@ ${schemaContext}`;
       const validation = this.validationService.validate(generatedSql);
       
       const risk = this.analyzeRisk(generatedSql);
-      const trustScore = this.calculateTrustScore(generatedSql);
+      let trustScore = this.calculateTrustScore(generatedSql);
       const policyCheck = await this.checkGovernance(generatedSql, userId);
 
       let status: QueryStatus = validation.isValid ? QueryStatus.VALIDATING : QueryStatus.BLOCKED;
       if (!policyCheck.allowed) {
-         status = QueryStatus.BLOCKED;
-         validation.isValid = false;
-         validation.errors.push(policyCheck.reason!);
+          status = QueryStatus.BLOCKED;
+          validation.isValid = false;
+          validation.errors.push(policyCheck.reason!);
       }
 
       // 히스토리 업데이트
@@ -311,8 +395,6 @@ ${schemaContext}`;
       // 6. 자동 실행 (옵션)
       let result: ExecutionResult | undefined;
       let summary: string | undefined;
-      // status field is already defined above
-      // status field is already defined above
 
       if (autoExecute) {
         try {
@@ -340,8 +422,11 @@ ${schemaContext}`;
               status: QueryStatus.SUCCESS,
               executionTime: result.executionTime,
               rowCount: result.rowCount,
+              trustScore: 1.0, // Proven by execution
             },
           });
+          
+          trustScore = 1.0;
         } catch (error) {
           status = QueryStatus.FAILED;
           await this.prisma.queryHistory.update({
@@ -382,7 +467,7 @@ ${schemaContext}`;
   async executeQuery(
     queryId: string,
     sql?: string,
-  ): Promise<{ result: ExecutionResult; summary?: string }> {
+  ): Promise<{ result: ExecutionResult; summary?: string; finalSql?: string }> {
     const query = await this.prisma.queryHistory.findUnique({
       where: { id: queryId },
       include: { dataSource: true },
@@ -408,13 +493,13 @@ ${schemaContext}`;
       );
 
       let summary: string | undefined;
-      if (result.rows.length > 0) {
-        summary = await this.llmService.summarizeResults(
-          validation.sanitizedSql || finalSql,
-          result.rows,
-          query.naturalQuery,
-        );
-      }
+      // if (result.rows.length > 0) {
+      //   summary = await this.llmService.summarizeResults(
+      //     validation.sanitizedSql || finalSql,
+      //     result.rows,
+      //     query.naturalQuery,
+      //   );
+      // }
 
       await this.prisma.queryHistory.update({
         where: { id: queryId },
@@ -423,11 +508,56 @@ ${schemaContext}`;
           status: QueryStatus.SUCCESS,
           executionTime: result.executionTime,
           rowCount: result.rowCount,
+          trustScore: 1.0, // Proven by execution
         },
       });
 
-      return { result, summary };
+      return { result, summary, finalSql: validation.sanitizedSql || finalSql };
     } catch (error) {
+      // Auto-correction attempt for re-execution
+      try {
+        const schemaContext = await this.metadataService.getSchemaContext(query.dataSourceId);
+        if (schemaContext) {
+           const fixedSql = await this.llmService.fixSQL(validation.sanitizedSql || finalSql, error.message, schemaContext);
+           
+           const retryResult = await this.executionService.execute(
+            query.dataSourceId,
+            fixedSql,
+            { mode: 'execute' }
+           );
+
+           await this.prisma.queryHistory.update({
+             where: { id: queryId },
+             data: {
+               finalSql: fixedSql,
+               status: QueryStatus.SUCCESS,
+               executionTime: retryResult.executionTime,
+               rowCount: retryResult.rowCount,
+               trustScore: 1.0, // Proven by execution
+             },
+           });
+
+           // Update Chat Message content if exists
+           const message = await this.prisma.message.findFirst({
+               where: { queryId: queryId }
+           });
+           
+           if (message) {
+               const newContent = message.content.replace(/```sql[\s\S]*?```/, `\`\`\`sql\n${fixedSql}\n\`\`\``) + 
+                                  `\n\n> **알림:** 초기 쿼리 실행이 실패하여, 자동으로 수정된 쿼리로 재실행되었습니다.`;
+               
+               await this.prisma.message.update({
+                   where: { id: message.id },
+                   data: { content: newContent }
+               });
+           }
+
+           return { result: retryResult, summary: undefined, finalSql: fixedSql };
+        }
+      } catch (retryError) {
+        // Fallthrough to fail
+      }
+
       await this.prisma.queryHistory.update({
         where: { id: queryId },
         data: {
@@ -509,11 +639,14 @@ ${schemaContext}`;
   }
 
   private calculateTrustScore(sql: string): number {
-      let score = 1.0;
+      // Base score for generated SQL (before execution) is capped at 0.8
+      // Execution success will boost it to 1.0
+      let score = 0.8;
       const upperSql = sql.toUpperCase();
       
-      const joinCount = (upperSql.match(/\bJOIN\b/g) || []).length;
-      score -= (joinCount * 0.05); // -0.05 per join
+      // Removed JOIN penalties as complexity != incorrectness
+      // const joinCount = (upperSql.match(/\bJOIN\b/g) || []).length;
+      // score -= (joinCount * 0.05); 
       
       if (upperSql.includes('SELECT *')) score -= 0.15;
       
@@ -522,7 +655,7 @@ ${schemaContext}`;
       if (upperSql.includes('LIMIT')) score += 0.05;
 
       // Cap
-      return Math.min(1.0, Math.max(0.1, parseFloat(score.toFixed(2))));
+      return Math.min(0.9, Math.max(0.1, parseFloat(score.toFixed(2))));
   }
 
   private async checkGovernance(sql: string, userId: string): Promise<{ allowed: boolean; reason?: string }> {

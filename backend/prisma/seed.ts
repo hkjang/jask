@@ -41,7 +41,7 @@ async function main() {
     create: {
       name: 'ollama',
       baseUrl: 'http://localhost:11434',
-      model: 'codellama:7b',
+      model: 'gpt-oss:20b',
       isActive: true,
       isDefault: true,
     },
@@ -53,8 +53,8 @@ async function main() {
     update: {},
     create: {
       name: 'vllm',
-      baseUrl: 'http://localhost:8000',
-      model: 'codellama/CodeLlama-7b-Instruct-hf',
+      baseUrl: 'https://vllm.koreacb.com',
+      model: 'gptoss',
       isActive: false,
       isDefault: false,
     },
@@ -85,12 +85,12 @@ async function main() {
     create: {
       id: 'demo-jask-db',
       name: 'Jask Demo DB',
-      type: 'POSTGRESQL',
+      type: 'PostgreSQL',
       host: 'localhost',
       port: 5432,
       database: 'jask',
       username: 'jask',
-      password: 'jask123',
+      password: 'jask_password',
       isActive: true,
     },
   });

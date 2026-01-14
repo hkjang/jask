@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, useMemo } from 'react';
+import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { MainLayout } from '@/components/layout/main-layout';
 import { Button } from '@/components/ui/button';
@@ -21,13 +22,20 @@ import {
   XAxis,
   YAxis,
   CartesianGrid,
-  Tooltip,
+  Tooltip as RechartsTooltip,
   Legend,
   ResponsiveContainer,
 } from 'recharts';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { ShareDialog } from './_components/share-dialog';
+import { ThreadSidebar } from '@/components/chat/ThreadSidebar';
 import { CommentSection } from './_components/comment-section';
 import { FeedbackDialog } from './_components/feedback-dialog';
 import {
@@ -78,12 +86,14 @@ interface Message {
   queryId?: string;
   timestamp: Date;
   isLoading?: boolean;
+  isExecuting?: boolean;
   error?: string;
   meta?: {
     tokens?: { prompt: number; completion: number; total: number };
     trustScore?: number;
     riskLevel?: string;
   };
+  feedback?: 'POSITIVE' | 'NEGATIVE';
 }
 
 
@@ -137,7 +147,7 @@ const ChartView = ({ rows }: { rows: any[] }) => {
             <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100} label>
               {pieData.map((_, index) => <Cell key={index} fill={CHART_COLORS[index % CHART_COLORS.length]} />)}
             </Pie>
-            <Tooltip />
+            <RechartsTooltip />
             <Legend />
           </PieChart>
         );
@@ -195,12 +205,28 @@ export default function QueryPage() {
       timestamp: new Date(),
     },
   ]);
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+
   const [input, setInput] = useState('');
   const [selectedDataSource, setSelectedDataSource] = useState<string>('');
   const [isDataSourceOpen, setIsDataSourceOpen] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [historySearch, setHistorySearch] = useState('');
   const [historyStatusFilter, setHistoryStatusFilter] = useState<'all' | 'SUCCESS' | 'FAILED'>('all');
+  
+  // Initialize from URL
+  const [activeThreadId, setActiveThreadId] = useState<string | undefined>(searchParams.get('threadId') || undefined);
+
+  // Sync state with URL changes
+  useEffect(() => {
+    const tid = searchParams.get('threadId');
+    if (tid && tid !== activeThreadId) {
+        setActiveThreadId(tid);
+    }
+  }, [searchParams]);
+
   const [shareQueryId, setShareQueryId] = useState<string | null>(null);
   const [activeCommentQueryId, setActiveCommentQueryId] = useState<string | null>(null);
   
@@ -238,6 +264,58 @@ export default function QueryPage() {
       setSelectedDataSource(dataSources[0].id);
     }
   }, [dataSources, selectedDataSource]);
+
+  /* Ref for skipping load on create */
+  const skipNextLoadRef = useRef(false);
+
+  useEffect(() => {
+    if (skipNextLoadRef.current) {
+      skipNextLoadRef.current = false;
+      return;
+    }
+    if (activeThreadId) {
+      loadThreadMessages(activeThreadId);
+    } else {
+      setMessages([{
+        id: 'welcome',
+        role: 'assistant',
+        content: '안녕하세요! 🎉 자연어로 데이터를 조회해보세요. 질문을 입력하면 SQL로 변환해드립니다.',
+        timestamp: new Date(),
+      }]);
+    }
+  }, [activeThreadId]);
+
+  const loadThreadMessages = async (threadId: string) => {
+    try {
+      const thread = await api.getThread(threadId);
+      if (thread && thread.messages) {
+        const mapped: Message[] = thread.messages.map((m: any) => ({
+          id: m.id,
+          role: m.role.toLowerCase(),
+          content: m.content,
+          timestamp: new Date(m.timestamp),
+          sql: m.query?.finalSql || m.query?.generatedSql,
+          queryId: m.query?.id,
+          meta: m.query ? {
+             riskLevel: m.query.riskLevel,
+             trustScore: m.query.trustScore,
+             trustScore: m.query.trustScore,
+          } : undefined,
+          feedback: m.query?.feedback as 'POSITIVE' | 'NEGATIVE' | undefined
+        }));
+        setMessages(mapped);
+      }
+    } catch (e) {
+       toast({ title: '대화 불러오기 실패', variant: 'destructive' });
+    }
+  };
+
+  const handleThreadSelect = (threadId: string) => {
+    setActiveThreadId(threadId);
+    const params = new URLSearchParams(searchParams);
+    params.set('threadId', threadId);
+    router.replace(`${pathname}?${params.toString()}`);
+  };
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -293,17 +371,51 @@ export default function QueryPage() {
   const executeMutation = useMutation({
     mutationFn: ({ queryId, sql }: { queryId: string; sql: string }) =>
       api.executeQuery(queryId, sql),
-    onSuccess: (data, variables) => {
-      setMessages((prev) =>
+    onMutate: async (variables) => {
+       setMessages((prev) =>
         prev.map((msg) =>
           msg.queryId === variables.queryId
-            ? { ...msg, result: data }
+            ? { ...msg, isExecuting: true, error: undefined }
             : msg
         )
+      );
+    },
+    onSuccess: (data: any, variables) => {
+      setMessages((prev) =>
+        prev.map((msg) => {
+          if (msg.queryId === variables.queryId) {
+             let newContent = msg.content;
+             // If SQL changed (auto-fix), update content display
+             if (data.finalSql && data.finalSql !== variables.sql) {
+                 newContent = newContent.replace(/```sql[\s\S]*?```/, `\`\`\`sql\n${data.finalSql}\n\`\`\``) +
+                              `\n\n> **알림:** 초기 쿼리 실행이 실패하여, 자동으로 수정된 쿼리로 재실행되었습니다.`;
+             }
+             
+             return { 
+                 ...msg, 
+                 result: data.result, 
+                 isExecuting: false,
+                 sql: data.finalSql || variables.sql,
+                 content: newContent,
+                 meta: { ...msg.meta, trustScore: 1.0 } // Confirmed success
+             };
+          }
+          return msg;
+        })
       );
       toast({ title: '쿼리 실행 완료' });
       logAction(ActionType.EXECUTE, variables.queryId, { sql: variables.sql });
     },
+    onError: (error: Error, variables) => {
+        setMessages((prev) =>
+            prev.map((msg) =>
+              msg.queryId === variables.queryId
+                ? { ...msg, isExecuting: false, error: error.message }
+                : msg
+            )
+        );
+        toast({ title: '실행 실패', description: error.message, variant: 'destructive' });
+    }
   });
 
   const addFavoriteMutation = useMutation({
@@ -323,6 +435,11 @@ export default function QueryPage() {
   // Feedback Handler
   const handleFeedback = async (queryId: string, type: 'POSITIVE' | 'NEGATIVE', note?: string) => {
     try {
+      // Optimistic Update
+      setMessages(prev => prev.map(m => 
+          m.queryId === queryId ? { ...m, feedback: type } : m
+      ));
+      
       await api.post(`/query/${queryId}/feedback`, { feedback: type, note });
       toast({ title: type === 'POSITIVE' ? "Thanks for your feedback!" : "Feedback submitted." });
       logAction(ActionType.RATE, queryId, { rating: type, reason: note });
@@ -335,7 +452,9 @@ export default function QueryPage() {
      setFeedbackQueryId(queryId);
      setIsFeedbackDialogOpen(true);
   };
-  
+
+
+
   const handleSend = async () => {
     if (!input.trim()) return;
     if (!selectedDataSource) {
@@ -359,26 +478,38 @@ export default function QueryPage() {
     };
 
     setMessages((prev) => [...prev, userMessage, assistantMessage]);
-    
-    // Streaming implementation
+    const currentInput = input;
+    setInput('');
+
     try {
+      let currentThreadId = activeThreadId;
+
+      // Create thread if not exists
+      if (!currentThreadId) {
+          const newThread = await api.createThread({ title: currentInput.slice(0, 30) });
+          currentThreadId = newThread.id;
+          skipNextLoadRef.current = true;
+          setActiveThreadId(currentThreadId);
+          queryClient.invalidateQueries({ queryKey: ['threads'] }); // Refresh sidebar
+      }
+
+      // Persist User Message
+      await api.addMessage(currentThreadId!, { role: 'USER', content: currentInput });
+
       let currentContent = '';
       let currentSql = '';
       let sqlExplanation = '';
       let tokenUsage = { prompt: 0, completion: 0, total: 0 };
-      let stepMessage = '';
 
-      const stream = api.generateQueryStream(selectedDataSource, input, true);
+      // Pass threadId to stream
+      const stream = api.generateQueryStream(selectedDataSource, currentInput, true, currentThreadId);
 
       for await (const chunk of stream) {
         if (chunk.type === 'step_start') {
-          // Optional: You can indicate step changes if you want, or just rely on content updates
           // stepMessage = `[${chunk.step}] ${chunk.message}`; 
         } else if (chunk.type === 'content_chunk') {
           if (chunk.step === 'sql_generation') {
             currentSql += chunk.content;
-            // Visualizing SQL Generation Step
-            // We construct the content to show what is happening
             const displayContent = `### 1. SQL Generation\n\`\`\`sql\n${currentSql}\n\`\`\`\n\n`;
             
             setMessages((prev) => prev.map(msg => 
@@ -388,8 +519,6 @@ export default function QueryPage() {
             ));
           } else if (chunk.step === 'explanation') {
             sqlExplanation += chunk.content;
-            
-            // Visualizing Explanation Step (Appending to SQL)
             const displayContent = `### 1. SQL Generation\n\`\`\`sql\n${currentSql}\n\`\`\`\n\n### 2. Explanation\n${sqlExplanation}`;
             
             setMessages((prev) => prev.map(msg => 
@@ -404,17 +533,7 @@ export default function QueryPage() {
             ));
           }
         } else if (chunk.type === 'token_usage') {
-          const usage = chunk.usage;
-          tokenUsage.prompt += usage.promptTokens;
-          tokenUsage.completion += usage.completionTokens;
-          tokenUsage.total += usage.totalTokens;
-        } else if (chunk.type === 'total_usage') {
-           // Final usage update
-           setMessages((prev) => prev.map(msg => 
-              msg.id === assistantMessage.id 
-                ? { ...msg, meta: { tokens: chunk.usage } } 
-                : msg
-            ));
+             // ... usage handling ...
         } else if (chunk.type === 'execution_result') {
            setMessages((prev) => prev.map(msg => 
               msg.id === assistantMessage.id 
@@ -422,7 +541,6 @@ export default function QueryPage() {
                 : msg
             ));
         } else if (chunk.type === 'done') {
-           // Finalize
            setMessages((prev) => prev.map(msg => 
               msg.id === assistantMessage.id 
                 ? { 
@@ -437,6 +555,8 @@ export default function QueryPage() {
                   } 
                 : msg
             ));
+            // Invalidate thread messages to ensure consistency? 
+            // Maybe not needed if we trust local state until refresh.
         } else if (chunk.type === 'error') {
            throw new Error(chunk.message);
         }
@@ -456,8 +576,6 @@ export default function QueryPage() {
         )
       );
     }
-    
-    setInput('');
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -477,8 +595,15 @@ export default function QueryPage() {
   const selectedDS = dataSources.find((ds: any) => ds.id === selectedDataSource);
 
   return (
+    <TooltipProvider>
     <MainLayout>
       <div className="flex h-[calc(100vh-4rem)]">
+        {/* Thread Sidebar */}
+        <ThreadSidebar 
+          activeThreadId={activeThreadId} 
+          onThreadSelect={handleThreadSelect} 
+        />
+
         {/* Main Content */}
         <div className={`flex flex-col flex-1 transition-all duration-300 ${isHistoryOpen ? 'mr-80' : ''}`}>
         {/* Header */}
@@ -703,21 +828,62 @@ export default function QueryPage() {
                                 <div className="flex items-center gap-2">
                                     <span className="text-xs text-zinc-400">Generated SQL</span>
                                     {message.meta?.riskLevel && (
-                                        <Badge variant="outline" className={`text-[10px] h-5 px-1.5 ${
-                                            message.meta.riskLevel === 'HIGH' || message.meta.riskLevel === 'CRITICAL' ? 'border-red-500 text-red-500' :
-                                            message.meta.riskLevel === 'MEDIUM' ? 'border-yellow-500 text-yellow-500' :
-                                            'border-green-500 text-green-500'
-                                        }`}>
-                                            Risk: {message.meta.riskLevel}
-                                        </Badge>
+                                        <Tooltip>
+                                            <TooltipTrigger asChild>
+                                                <Badge variant="outline" className={`text-[10px] h-5 px-1.5 cursor-help ${
+                                                    message.meta.riskLevel === 'HIGH' || message.meta.riskLevel === 'CRITICAL' ? 'border-red-500 text-red-500' :
+                                                    message.meta.riskLevel === 'MEDIUM' ? 'border-yellow-500 text-yellow-500' :
+                                                    'border-green-500 text-green-500'
+                                                }`}>
+                                                    Risk: {message.meta.riskLevel}
+                                                </Badge>
+                                            </TooltipTrigger>
+                                            <TooltipContent className="max-w-xs bg-zinc-800 text-zinc-100 border-zinc-700">
+                                                <p className="font-semibold mb-2">위험도 산정 기준 (Risk Level)</p>
+                                                <ul className="list-disc pl-4 text-xs space-y-1 mb-2">
+                                                    <li><strong>CRITICAL:</strong> 데이터 변경(DROP, DELETE, UPDATE)이나 민감 테이블 접근 포함.</li>
+                                                    <li><strong>HIGH:</strong> JOIN 5개 이상 또는 LIMIT/집계 함수 없는 대량 조회 가능성.</li>
+                                                    <li><strong>MEDIUM:</strong> JOIN 3~4개 포함.</li>
+                                                    <li><strong>LOW:</strong> 단순 조회 (JOIN 2개 이하).</li>
+                                                </ul>
+                                            </TooltipContent>
+                                        </Tooltip>
                                     )}
                                     {message.meta?.trustScore !== undefined && (
-                                        <Badge variant="outline" className={`text-[10px] h-5 px-1.5 ${
-                                            message.meta.trustScore < 0.5 ? 'border-red-500 text-red-500' : 
-                                            message.meta.trustScore > 0.8 ? 'border-green-500 text-green-500' : 'border-blue-500 text-blue-500'
-                                        }`}>
-                                            Trust: {Math.round(message.meta.trustScore * 100)}%
-                                        </Badge>
+                                        <Tooltip>
+                                            <TooltipTrigger asChild>
+                                                <Badge variant="outline" className={`text-[10px] h-5 px-1.5 cursor-help ${
+                                                    message.meta.trustScore < 0.5 ? 'border-red-500 text-red-500' : 
+                                                    message.meta.trustScore > 0.8 ? 'border-green-500 text-green-500' : 'border-blue-500 text-blue-500'
+                                                }`}>
+                                                    Trust: {Math.round(message.meta.trustScore * 100)}%
+                                                </Badge>
+                                            </TooltipTrigger>
+                                            <TooltipContent className="max-w-xs bg-zinc-800 text-zinc-100 border-zinc-700">
+                                                <p className="font-semibold mb-2">신뢰도 산정 로직 (Trust Score)</p>
+                                                <div className="space-y-2 text-xs">
+                                                    <div>
+                                                        <span className="font-bold text-green-400">실행 성공 시: 100%</span>
+                                                    </div>
+                                                    <div className="pt-2 border-t border-zinc-600">
+                                                        <span className="font-bold text-zinc-300">실행 전 (예측): 요약 검토</span>
+                                                    </div>
+                                                    <div className="grid grid-cols-[1fr_auto] gap-2 items-center">
+                                                        <span>기본 점수</span>
+                                                        <span className="text-zinc-400">80%</span>
+                                                        <span>SELECT * (전체 컬럼)</span>
+                                                        <span className="text-red-400">-15%</span>
+                                                        <span>WHERE 조건 포함</span>
+                                                        <span className="text-green-400">+5%</span>
+                                                        <span>LIMIT 절 포함</span>
+                                                        <span className="text-green-400">+5%</span>
+                                                    </div>
+                                                    <div className="pt-1 text-[10px] text-zinc-500 italic">
+                                                        * 실행 전에는 90% 까지 제한됨
+                                                    </div>
+                                                </div>
+                                            </TooltipContent>
+                                        </Tooltip>
                                     )}
                                 </div>
                                 <div className="flex gap-1">
@@ -731,17 +897,25 @@ export default function QueryPage() {
                                   </Button>
                                   {message.queryId && (
                                     <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-6 w-6 text-zinc-400 hover:text-white"
+                                      variant={message.result ? "ghost" : "default"} // Highlight if no result
+                                      size={message.result ? "icon" : "sm"}
+                                      className={`${message.result ? "h-6 w-6 text-zinc-400 hover:text-white" : "h-7 gap-1.5 bg-green-600 hover:bg-green-700 text-white"}`}
                                       onClick={() =>
                                         executeMutation.mutate({
                                           queryId: message.queryId!,
                                           sql: message.sql!,
                                         })
                                       }
+                                      title="Run Query"
                                     >
-                                      <RefreshCw className="h-3 w-3" />
+                                      {message.isExecuting ? (
+                                        <Loader2 className="h-3 w-3 animate-spin" />
+                                      ) : message.result ? <RefreshCw className="h-3 w-3" /> : (
+                                        <>
+                                          <Play className="h-3 w-3 fill-current" />
+                                          <span className="text-xs">Run</span>
+                                        </>
+                                      )}
                                     </Button>
                                   )}
                                   <Button
@@ -770,20 +944,20 @@ export default function QueryPage() {
                                         <Button
                                           variant="ghost"
                                           size="icon"
-                                          className="h-6 w-6 text-zinc-400 hover:text-green-500"
+                                          className={`h-6 w-6 ${message.feedback === 'POSITIVE' ? 'text-green-500' : 'text-zinc-400 hover:text-green-500'}`}
                                           onClick={() => handleFeedback(message.queryId!, 'POSITIVE')}
                                           title="Good Response"
                                         >
-                                          <ThumbsUp className="h-3 w-3" />
+                                          <ThumbsUp className={`h-3 w-3 ${message.feedback === 'POSITIVE' ? 'fill-current' : ''}`} />
                                         </Button>
                                         <Button
                                           variant="ghost"
                                           size="icon"
-                                          className="h-6 w-6 text-zinc-400 hover:text-red-500"
+                                          className={`h-6 w-6 ${message.feedback === 'NEGATIVE' ? 'text-red-500' : 'text-zinc-400 hover:text-red-500'}`}
                                           onClick={() => onNegativeFeedback(message.queryId!)}
                                           title="Bad Response"
                                         >
-                                          <ThumbsDown className="h-3 w-3" />
+                                          <ThumbsDown className={`h-3 w-3 ${message.feedback === 'NEGATIVE' ? 'fill-current' : ''}`} />
                                         </Button>
                                      </>
                                   )}
@@ -946,18 +1120,18 @@ export default function QueryPage() {
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-7 w-7"
+                              className={`h-7 w-7 ${message.feedback === 'POSITIVE' ? 'text-green-500' : 'text-zinc-400 hover:text-green-500'}`}
                               onClick={() => handleFeedback(message.queryId!, 'POSITIVE')}
                             >
-                              <ThumbsUp className="h-3.5 w-3.5" />
+                              <ThumbsUp className={`h-3.5 w-3.5 ${message.feedback === 'POSITIVE' ? 'fill-current' : ''}`} />
                             </Button>
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-7 w-7"
+                              className={`h-7 w-7 ${message.feedback === 'NEGATIVE' ? 'text-red-500' : 'text-zinc-400 hover:text-red-500'}`}
                               onClick={() => handleFeedback(message.queryId!, 'NEGATIVE')}
                             >
-                              <ThumbsDown className="h-3.5 w-3.5" />
+                              <ThumbsDown className={`h-3.5 w-3.5 ${message.feedback === 'NEGATIVE' ? 'fill-current' : ''}`} />
                             </Button>
                           </div>
                         )}
@@ -1273,5 +1447,6 @@ export default function QueryPage() {
         }}
       />
     </MainLayout>
+    </TooltipProvider>
   );
 }

@@ -236,6 +236,9 @@ model QueryHistory {
   @@index([createdAt])
 
   actions           UserActionLog[]
+  
+  // Relation to Thread Messages
+  messages          Message[]
 }
 
 enum QueryStatus {
@@ -290,6 +293,10 @@ model User {
   // Collaboration
   comments     QueryComment[]
   shares       QueryShare[]     @relation("SharedBy")
+
+  // Threads
+  threads      Thread[]
+  participations UserThread[]
 
   // Profile
   department   String?
@@ -533,4 +540,83 @@ model EvolutionCandidate {
   
   @@index([status])
   @@index([type])
+}
+
+// ===========================================
+// 대화 쓰레드 (Conversation Threads)
+// ===========================================
+model Thread {
+  id           String   @id @default(uuid())
+  title        String
+  ownerId      String
+  owner        User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  
+  status       ThreadStatus @default(ACTIVE)
+  
+  messages     Message[]
+  meta         ThreadMeta?
+  users        UserThread[]
+  
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([ownerId])
+  @@index([updatedAt])
+}
+
+enum ThreadStatus {
+  ACTIVE
+  ARCHIVED
+  DELETED
+}
+
+model Message {
+  id           String   @id @default(uuid())
+  threadId     String
+  thread       Thread   @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  
+  role         MessageRole
+  content      String   @db.Text
+  
+  // Optional: Link to a QueryHistory if this message generated an SQL
+  queryId      String?
+  query        QueryHistory? @relation(fields: [queryId], references: [id])
+
+  timestamp    DateTime @default(now())
+  
+  @@index([threadId])
+  @@index([timestamp])
+}
+
+enum MessageRole {
+  USER
+  ASSISTANT
+  SYSTEM
+}
+
+model ThreadMeta {
+  id              String   @id @default(uuid())
+  threadId        String   @unique
+  thread          Thread   @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  
+  contextSummary  String?  @db.Text
+  topicTags       String[] @default([])
+  importanceScore Float    @default(0)
+  
+  updatedAt       DateTime @updatedAt
+}
+
+model UserThread {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  threadId     String
+  thread       Thread   @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  
+  isPinned     Boolean  @default(false)
+  lastAccess   DateTime @default(now())
+  
+  @@unique([userId, threadId])
+  @@index([userId])
 }

@@ -93,6 +93,21 @@ export class AdminController {
     return this.adminService.toggleUserActive(id);
   }
 
+  // 대화 이력 (관리자용)
+  @Get('threads')
+  @ApiOperation({ summary: '전체 대화 이력' })
+  getAllThreads(
+      @Query('page') page?: string, 
+      @Query('limit') limit?: string,
+      @Query('q') q?: string
+  ) {
+    return this.adminService.getAllThreads(
+      page ? parseInt(page) : 1,
+      limit ? parseInt(limit) : 20,
+      q
+    );
+  }
+
   // 샘플 쿼리
   @Get('sample-queries')
   @ApiOperation({ summary: '샘플 쿼리 목록' })

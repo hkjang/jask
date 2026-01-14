@@ -36,6 +36,7 @@ const navItems = [
 
 const adminItems = [
   { href: '/admin/dashboard', icon: Layout, label: '대시보드' },
+  { href: '/admin/chat-history', icon: MessageSquare, label: '대화 이력' },
   { href: '/admin/settings', icon: Settings, label: '설정' },
   { href: '/admin/sample-queries', icon: FileText, label: '샘플 쿼리' },
   { href: '/admin/policies', icon: ShieldAlert, label: '정책 관리' },

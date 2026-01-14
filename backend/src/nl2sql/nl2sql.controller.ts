@@ -2,7 +2,7 @@ import { Controller, Post, Body, Param, UseGuards, Request, Res } from '@nestjs/
 import { Response } from 'express';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
-import { NL2SQLService } from './nl2sql.service';
+import { NL2SQLService, NL2SQLRequest } from './nl2sql.service';
 import { GenerateQueryDto, ExecuteQueryDto, FeedbackDto } from './dto/nl2sql.dto';
 
 @ApiTags('NL2SQL')
@@ -18,9 +18,10 @@ export class NL2SQLController {
     return this.nl2sqlService.generateAndExecute({
       dataSourceId: dto.dataSourceId,
       question: dto.question,
-      userId: req.user.id,
+      userId: req.user?.id || 'anonymous',
       autoExecute: dto.autoExecute,
-    });
+      threadId: dto.threadId,
+    } as NL2SQLRequest);
   }
 
   @Post('generate/stream')
@@ -34,9 +35,10 @@ export class NL2SQLController {
     const stream = this.nl2sqlService.generateAndExecuteStream({
       dataSourceId: dto.dataSourceId,
       question: dto.question,
-      userId: req.user.id,
+      userId: req.user?.id || 'anonymous',
       autoExecute: dto.autoExecute,
-    });
+      threadId: dto.threadId,
+    } as NL2SQLRequest);
 
     for await (const chunk of stream) {
       res.write(`data: ${JSON.stringify(chunk)}\n\n`);

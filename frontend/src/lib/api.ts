@@ -144,14 +144,14 @@ class ApiClient {
   }
 
   // NL2SQL
-  async generateQuery(dataSourceId: string, question: string, autoExecute = false) {
+  async generateQuery(dataSourceId: string, question: string, autoExecute = false, threadId?: string) {
     return this.request('/nl2sql/generate', {
       method: 'POST',
-      body: { dataSourceId, question, autoExecute },
+      body: { dataSourceId, question, autoExecute, threadId },
     });
   }
 
-  async *generateQueryStream(dataSourceId: string, question: string, autoExecute = false): AsyncGenerator<any> {
+  async *generateQueryStream(dataSourceId: string, question: string, autoExecute = false, threadId?: string): AsyncGenerator<any> {
     const token = this.getToken();
     const headers: any = { 'Content-Type': 'application/json' };
     if (token) headers['Authorization'] = `Bearer ${token}`;
@@ -160,7 +160,7 @@ class ApiClient {
     const response = await fetch(`http://localhost:4000/api/nl2sql/generate/stream`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ dataSourceId, question, autoExecute }),
+      body: JSON.stringify({ dataSourceId, question, autoExecute, threadId }),
     });
 
     if (!response.ok) {
@@ -372,6 +372,26 @@ class ApiClient {
 
   async deleteRelationship(relationshipId: string) {
     return this.request(`/metadata/relationships/${relationshipId}/delete`, { method: 'POST' });
+  }
+  // Threads
+  async getThreads() {
+    return this.request<any[]>('/threads');
+  }
+
+  async createThread(data: { title: string }) {
+    return this.request<any>('/threads', { method: 'POST', body: data });
+  }
+
+  async getThread(id: string) {
+    return this.request<any>(`/threads/${id}`);
+  }
+
+  async addMessage(threadId: string, data: { role: string; content: string }) {
+    return this.request(`/threads/${threadId}/messages`, { method: 'POST', body: data });
+  }
+
+  async deleteThread(id: string) {
+    return this.request(`/threads/${id}`, { method: 'DELETE' });
   }
 }
 

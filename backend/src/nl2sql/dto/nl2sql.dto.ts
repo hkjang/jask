@@ -15,6 +15,11 @@ export class GenerateQueryDto {
   @IsOptional()
   @IsBoolean()
   autoExecute?: boolean;
+
+  @ApiProperty({ description: '쓰레드 ID (대화 문맥 유지용)', required: false })
+  @IsOptional()
+  @IsString()
+  threadId?: string;
 }
 
 export class ExecuteQueryDto {

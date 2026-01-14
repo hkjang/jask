@@ -131,13 +131,38 @@ Rules:
 3. Always include LIMIT clause (max 1000)
 4. Use proper JOIN syntax when needed
 5. Return ONLY the SQL query, no explanations
-${dbSpecificRules}
+6. Avoid using complex proprietary functions like 'percentile_cont' or 'WITHIN GROUP' unless absolutely necessary. Prefer standard aggregates (AVG, MIN, MAX) or simple CTEs.
+7. ${dbSpecificRules}
 
 Database Schema:
 ${schemaContext}`;
 
     const response = await this.generate({
       prompt: naturalQuery,
+      systemPrompt,
+      temperature: 0.1,
+      maxTokens: 2048,
+    });
+
+    return this.extractSQL(response.content);
+    return this.extractSQL(response.content);
+  }
+
+  async fixSQL(invalidSql: string, errorMessage: string, schemaContext: string): Promise<string> {
+    const systemPrompt = `You are an expert SQL debugger. The user has a query that failed to execute. Fix the SQL based on the error message.
+    
+Rules:
+1. Return ONLY the fixed SQL query, no explanations.
+2. Maintain the original intent of the query.
+3. Fix syntax errors or logic issues mentioned in the error message.
+4. Ensure compatibility with the database schema.
+5. Do NOT use complex proprietary functions unless supported.
+
+Database Schema:
+${schemaContext}`;
+
+    const response = await this.generate({
+      prompt: `Failed SQL:\n${invalidSql}\n\nError Message:\n${errorMessage}\n\nPlease provide the corrected SQL.`,
       systemPrompt,
       temperature: 0.1,
       maxTokens: 2048,
@@ -233,6 +258,41 @@ Rules:
     }
   }
 
+  async generateChat(messages: { role: string; content: string }[], providerId?: string): Promise<LLMStreamChunk[]> {
+    // 1. Construct prompt from messages
+    let prompt = '';
+    let systemPrompt = '';
+
+    for (const msg of messages) {
+      if (msg.role === 'system' || msg.role === 'SYSTEM') {
+        systemPrompt += msg.content + '\n';
+      } else if (msg.role === 'user' || msg.role === 'USER') {
+        prompt += `User: ${msg.content}\n`;
+      } else if (msg.role === 'assistant' || msg.role === 'ASSISTANT') {
+        prompt += `Assistant: ${msg.content}\n`;
+      }
+    }
+
+    // Ensure the last part prompts the assistant
+    if (!prompt.trim().endsWith('Assistant:')) {
+      prompt += 'Assistant: ';
+    }
+
+    const request: LLMRequest = {
+      prompt,
+      systemPrompt: systemPrompt || undefined,
+      temperature: 0.7,
+    };
+
+    // For now, return non-streamed response as chunks or stream if possible
+    // Using generateStream internally
+    const chunks: LLMStreamChunk[] = [];
+    for await (const chunk of this.generateStream(request, providerId)) {
+      chunks.push(chunk);
+    }
+    return chunks;
+  }
+
   private async getActiveProvider(providerId?: string): Promise<{
     name: string;
     baseUrl: string;
@@ -286,10 +346,10 @@ Rules:
       return generalBlockMatch[1].trim();
     }
 
-    // SELECT로 시작하는 쿼리 찾기
-    const selectMatch = content.match(/SELECT[\s\S]+?(?:;|$)/i);
-    if (selectMatch) {
-      return selectMatch[0].replace(/;$/, '').trim();
+    // SELECT or WITH로 시작하는 쿼리 찾기
+    const sqlMatch = content.match(/(?:WITH|SELECT)[\s\S]+?(?:;|$)/i);
+    if (sqlMatch) {
+      return sqlMatch[0].replace(/;$/, '').trim();
     }
 
     return content.trim();

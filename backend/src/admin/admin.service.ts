@@ -114,6 +114,34 @@ export class AdminService {
     });
   }
 
+  // 전체 대화 이력 (관리자용)
+  async getAllThreads(page = 1, limit = 20, search?: string) {
+    const where: any = {};
+    if (search) {
+      where.OR = [
+          { title: { contains: search, mode: 'insensitive' } },
+          { owner: { email: { contains: search, mode: 'insensitive' } } },
+          { owner: { name: { contains: search, mode: 'insensitive' } } },
+      ];
+    }
+
+    const [items, total] = await Promise.all([
+      this.prisma.thread.findMany({
+        where,
+        skip: (page - 1) * limit,
+        take: limit,
+        orderBy: { updatedAt: 'desc' },
+        include: {
+          owner: { select: { id: true, email: true, name: true } },
+          _count: { select: { messages: true } },
+        },
+      }),
+      this.prisma.thread.count({ where }),
+    ]);
+
+    return { items, pagination: { page, limit, total } };
+  }
+
   // 대시보드 통계
   async getDashboardStats() {
     const [
