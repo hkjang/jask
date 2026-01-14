@@ -135,7 +135,8 @@ export class DataSourcesService {
   async getConnection(dataSourceId: string): Promise<{ client: DbConnection; type: string }> {
     const cached = this.connectionCache.get(dataSourceId);
     if (cached) {
-      return { client: cached, type: 'cached' };
+      const dataSource = await this.prisma.dataSource.findUnique({ where: { id: dataSourceId } });
+      return { client: cached, type: dataSource?.type || 'unknown' };
     }
 
     const dataSource = await this.findOne(dataSourceId);

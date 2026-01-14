@@ -338,6 +338,10 @@ class ApiClient {
     return this.request<any[]>(`/metadata/tables/${dataSourceId}`);
   }
 
+  async previewTableData(tableId: string) {
+    return this.request<any[]>(`/metadata/tables/${tableId}/preview`);
+  }
+
   async updateTableExtendedMetadata(tableId: string, data: any) {
     return this.request(`/metadata/table/${tableId}`, { method: 'PUT', body: data });
   }

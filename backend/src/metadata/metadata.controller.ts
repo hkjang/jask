@@ -63,6 +63,12 @@ export class MetadataController {
     return this.metadataService.getTables(dataSourceId);
   }
 
+  @Get('tables/:tableId/preview')
+  @ApiOperation({ summary: '테이블 데이터 미리보기' })
+  async previewTableData(@Param('tableId') tableId: string) {
+    return this.metadataService.previewTableData(tableId);
+  }
+
   @Put('table/:tableId')
   @ApiOperation({ summary: '테이블 메타데이터 수정 (확장)' })
   async updateTableExtendedMetadata(

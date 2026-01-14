@@ -10,7 +10,7 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { 
   Layout, Save, Info, Plus, Columns, Network, Tag, 
-  Trash2, SlidersHorizontal, AlertCircle 
+  Trash2, SlidersHorizontal, AlertCircle, Table as TableIcon
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { api } from "@/lib/api";
@@ -19,6 +19,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { CodeValueManager } from "./code-value-manager";
 import { RelationshipManager } from "./relationship-manager";
 import { MetadataQualityScore } from "./metadata-quality-score";
+import { DataPreview } from "./data-preview";
 
 interface MetadataBuilderProps {
   table: any;
@@ -198,6 +199,7 @@ export function MetadataBuilder({ table, onUpdate }: MetadataBuilderProps) {
                 <TabsTrigger value="general" className="gap-2"><SlidersHorizontal className="h-4 w-4"/> 일반</TabsTrigger>
                 <TabsTrigger value="columns" className="gap-2"><Columns className="h-4 w-4"/> 컬럼</TabsTrigger>
                 <TabsTrigger value="relationships" className="gap-2"><Network className="h-4 w-4"/> 관계</TabsTrigger>
+                <TabsTrigger value="preview" className="gap-2"><TableIcon className="h-4 w-4"/> 데이터 미리보기</TabsTrigger>
               </TabsList>
             </div>
 
@@ -372,6 +374,10 @@ export function MetadataBuilder({ table, onUpdate }: MetadataBuilderProps) {
 
             <TabsContent value="relationships" className="flex-1 overflow-auto bg-muted/5 mt-0">
                  <RelationshipManager tableId={table.id} dataSourceId={table.dataSourceId} />
+            </TabsContent>
+
+            <TabsContent value="preview" className="flex-1 overflow-auto bg-muted/5 mt-0">
+                 <DataPreview tableId={table.id} />
             </TabsContent>
           </Tabs>
       </div>

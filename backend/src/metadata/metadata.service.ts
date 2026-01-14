@@ -277,6 +277,31 @@ export class MetadataService {
     });
   }
 
+  async previewTableData(tableId: string, limit: number = 10) {
+    const table = await this.prisma.tableMetadata.findUnique({
+      where: { id: tableId }
+    });
+    if (!table) throw new Error('Table not found');
+
+    const { dataSourceId, schemaName, tableName } = table;
+    const { client, type } = await this.dataSourcesService.getConnection(dataSourceId);
+
+    try {
+      if (type === 'postgresql') {
+        const query = `SELECT * FROM "${schemaName}"."${tableName}" LIMIT $1`;
+        const res = await (client as PgClient).query(query, [limit]);
+        return res.rows;
+      } else if (type === 'mysql') {
+        const query = `SELECT * FROM ${tableName} LIMIT ?`;
+        const [rows] = await (client as mysql.Connection).query(query, [limit]);
+        return rows;
+      }
+    } catch (error) {
+      this.logger.error(`Preview failed for ${tableName}: ${error.message}`);
+      throw new Error('Failed to preview table data');
+    }
+  }
+
   async calculateAndSaveQualityScore(tableId: string) {
     const table = await this.prisma.tableMetadata.findUnique({
         where: { id: tableId },
