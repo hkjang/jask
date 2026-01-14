@@ -40,6 +40,13 @@ export class EvolutionCandidateService {
                }
            });
 
+            // Aggregate Evidence
+            const evidence = signals.map(s => ({
+                queryId: s.dataset?.queryId,
+                naturalQuery: s.dataset?.naturalQuery || 'Unknown Query',
+                score: s.score
+            }));
+
            if (!existing) {
                await this.prisma.evolutionCandidate.create({
                    data: {
@@ -47,6 +54,7 @@ export class EvolutionCandidateService {
                        targetId,
                        proposedChange: { action: 'REVIEW_REQUIRED', reason: 'Low trust score detected multiple times.' },
                        reasoning: `Detected ${signals.length} low trust queries in the last 24 hours. Metadata review recommended.`,
+                       impactAnalysis: { evidence },
                        status: 'PENDING'
                    }
                });

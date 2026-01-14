@@ -64,22 +64,25 @@ export class SignalProcessorService {
           if (p.rating === 'NEGATIVE') score = Math.max(score - 0.4, 0.0);
       }
 
-      // Save Signal
-      if (execution.query) {
          // We might want to link this to the Prompt or Metadata used
          // For now, let's link to the QueryId as a proxy or if we had TableId
-         await this.prisma.evolutionSignal.create({
-             data: {
-                 targetId: execution.query.dataSourceId, // Signal about the DataSource
-                 signalType: type,
-                 score: score,
-                 confidence: 0.8,
-                 dataset: { queryId: execution.queryId, sql: execution.payload } as any
-             }
-         });
+         if (execution.query) {
+             await this.prisma.evolutionSignal.create({
+                 data: {
+                     targetId: execution.query!.dataSourceId, // Signal about the DataSource
+                     signalType: type,
+                     score: score,
+                     confidence: 0.8,
+                     dataset: { 
+                        queryId: execution.queryId, 
+                        sql: execution.payload,
+                        naturalQuery: execution.query!.naturalQuery // Include query text
+                     } as any
+                 }
+             });
+         }
       }
     }
-  }
 
   private async identifyErrorPatterns() {
       // Find queries that were ABANDONED (High risk)

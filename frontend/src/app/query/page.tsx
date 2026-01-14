@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect, useMemo } from 'react';
+import { Suspense, useState, useRef, useEffect, useMemo } from 'react';
 import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { MainLayout } from '@/components/layout/main-layout';
@@ -190,7 +190,7 @@ const ChartView = ({ rows }: { rows: any[] }) => {
   );
 };
 
-export default function QueryPage() {
+function QueryPageContent() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -1448,5 +1448,13 @@ export default function QueryPage() {
       />
     </MainLayout>
     </TooltipProvider>
+  );
+}
+
+export default function QueryPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center min-h-screen"><Loader2 className="h-8 w-8 animate-spin" /></div>}>
+      <QueryPageContent />
+    </Suspense>
   );
 }
