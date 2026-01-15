@@ -222,7 +222,13 @@ function QueryPageContent() {
   const pathname = usePathname();
 
   const [input, setInput] = useState('');
-  const [selectedDataSource, setSelectedDataSource] = useState<string>('');
+  const [selectedDataSource, setSelectedDataSource] = useState<string>(() => {
+    // Initialize from localStorage if available
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('jask_selectedDataSource') || '';
+    }
+    return '';
+  });
   const [isDataSourceOpen, setIsDataSourceOpen] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [historySearch, setHistorySearch] = useState('');
@@ -290,9 +296,24 @@ function QueryPageContent() {
     queryFn: () => api.getDataSources(),
   });
 
+  // Persist selected data source to localStorage
   useEffect(() => {
-    if (dataSources.length > 0 && !selectedDataSource) {
-      setSelectedDataSource(dataSources[0].id);
+    if (selectedDataSource) {
+      localStorage.setItem('jask_selectedDataSource', selectedDataSource);
+    }
+  }, [selectedDataSource]);
+
+  // Initialize or validate selected data source when dataSources change
+  useEffect(() => {
+    if (dataSources.length > 0) {
+      // Check if current selection is still valid
+      const isValidSelection = selectedDataSource && 
+        dataSources.some((ds: any) => ds.id === selectedDataSource);
+      
+      if (!isValidSelection) {
+        // Current selection is invalid, set to first available
+        setSelectedDataSource(dataSources[0].id);
+      }
     }
   }, [dataSources, selectedDataSource]);
 
