@@ -101,6 +101,15 @@ class ApiClient {
     return data;
   }
 
+  // Profile
+  async getProfile() {
+    return this.request<any>('/auth/profile');
+  }
+
+  async updateProfile(data: { name?: string; department?: string; customInstructions?: string }) {
+    return this.request('/auth/profile', { method: 'PUT', body: data });
+  }
+
   // DataSources
   async getDataSources() {
     return this.request<any[]>('/datasources');

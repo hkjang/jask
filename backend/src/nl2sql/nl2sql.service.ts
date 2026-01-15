@@ -142,6 +142,10 @@ Note: This database currently has no tables. You can create new tables.`;
 2. Never use DELETE, UPDATE, INSERT, DROP, TRUNCATE, ALTER, CREATE`;
     }
 
+    // Fetch user's custom instructions
+    const currentUser = await this.prisma.user.findUnique({ where: { id: userId } });
+    const customInstructions = (currentUser?.preferences as any)?.customInstructions || '';
+
     const sqlSystemPrompt = `You are an expert SQL query generator. Generate only valid SQL queries based on the user's natural language question and the provided database schema.
 Rules:
 ${sqlRules}
@@ -162,6 +166,7 @@ For Oracle database specifically:
 - For column info, use: SELECT COLUMN_NAME, DATA_TYPE FROM ALL_TAB_COLUMNS WHERE TABLE_NAME = 'TABLE_NAME'
 - Oracle system views: ALL_TABLES, ALL_TAB_COLUMNS, ALL_CONSTRAINTS (NOT information_schema)
 - Oracle does NOT have information_schema - never use it
+${customInstructions ? `\nUser Custom Instructions:\n${customInstructions}` : ''}
 
 Database Schema:
 ${schemaContext}`;

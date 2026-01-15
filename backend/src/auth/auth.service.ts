@@ -90,4 +90,65 @@ export class AuthService {
       role,
     });
   }
+
+  async getProfile(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        department: true,
+        preferences: true,
+        createdAt: true,
+      },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('사용자를 찾을 수 없습니다.');
+    }
+
+    return {
+      ...user,
+      customInstructions: (user.preferences as any)?.customInstructions || '',
+    };
+  }
+
+  async updateProfile(userId: string, data: { name?: string; department?: string; customInstructions?: string }) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('사용자를 찾을 수 없습니다.');
+    }
+
+    const currentPreferences = (user.preferences as any) || {};
+    const updatedPreferences = data.customInstructions !== undefined
+      ? { ...currentPreferences, customInstructions: data.customInstructions }
+      : currentPreferences;
+
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        ...(data.name && { name: data.name }),
+        ...(data.department !== undefined && { department: data.department }),
+        preferences: updatedPreferences,
+      },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        department: true,
+        preferences: true,
+      },
+    });
+
+    return {
+      ...updated,
+      customInstructions: (updated.preferences as any)?.customInstructions || '',
+    };
+  }
 }

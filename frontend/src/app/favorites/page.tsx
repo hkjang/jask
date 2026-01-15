@@ -128,24 +128,24 @@ export default function FavoritesPage() {
   const [deleteTargetFolder, setDeleteTargetFolder] = useState<FavoriteFolder | null>(null);
 
   // Queries
-  const { data: favorites = [], isLoading } = useQuery({
+  const { data: favorites = [], isLoading } = useQuery<Favorite[]>({
     queryKey: ['favorites', { folderId: selectedFolder, tag: selectedTag, sortBy, sortOrder }],
     queryFn: () => api.getFavorites({ 
       folderId: selectedFolder || undefined, 
       tag: selectedTag || undefined,
       sortBy, 
       sortOrder 
-    }),
+    }) as Promise<Favorite[]>,
   });
 
-  const { data: folders = [] } = useQuery({
+  const { data: folders = [] } = useQuery<FavoriteFolder[]>({
     queryKey: ['favoriteFolders'],
-    queryFn: () => api.getFavoriteFolders(),
+    queryFn: () => api.getFavoriteFolders() as Promise<FavoriteFolder[]>,
   });
 
-  const { data: stats } = useQuery({
+  const { data: stats } = useQuery<{ total: number; withFolder: number }>({
     queryKey: ['favoriteStats'],
-    queryFn: () => api.getFavoriteStats(),
+    queryFn: () => api.getFavoriteStats() as Promise<{ total: number; withFolder: number }>,
   });
 
   // Mutations
@@ -213,9 +213,9 @@ export default function FavoritesPage() {
 
   // Computed
   const filteredFavorites = useMemo(() => {
-    if (!searchQuery) return favorites as Favorite[];
+    if (!searchQuery) return favorites;
     const query = searchQuery.toLowerCase();
-    return (favorites as Favorite[]).filter((fav) =>
+    return favorites.filter((fav) =>
       fav.name.toLowerCase().includes(query) ||
       fav.naturalQuery?.toLowerCase().includes(query) ||
       fav.sqlQuery?.toLowerCase().includes(query) ||
@@ -225,7 +225,7 @@ export default function FavoritesPage() {
 
   const allTags = useMemo(() => {
     const tagMap: Record<string, number> = {};
-    (favorites as Favorite[]).forEach((fav) => {
+    favorites.forEach((fav) => {
       fav.tags?.forEach((tag) => {
         tagMap[tag] = (tagMap[tag] || 0) + 1;
       });
@@ -233,8 +233,8 @@ export default function FavoritesPage() {
     return Object.entries(tagMap).sort((a, b) => b[1] - a[1]);
   }, [favorites]);
 
-  const totalCount = (folders as FavoriteFolder[]).reduce((acc, f) => acc + f._count.favorites, 0) + 
-    (favorites as Favorite[]).filter(f => !f.folderId).length;
+  const totalCount = folders.reduce((acc, f) => acc + f._count.favorites, 0) + 
+    favorites.filter(f => !f.folderId).length;
 
   // Handlers
   const copySQL = (sql: string) => {

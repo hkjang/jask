@@ -34,3 +34,24 @@ export class LoginDto {
   @IsNotEmpty({ message: '비밀번호는 필수입니다.' })
   password: string;
 }
+
+export class UpdateProfileDto {
+  @ApiProperty({ example: '홍길동', required: false })
+  @IsString()
+  @IsOptional()
+  name?: string;
+
+  @ApiProperty({ example: '개발팀', required: false })
+  @IsString()
+  @IsOptional()
+  department?: string;
+
+  @ApiProperty({ 
+    example: '항상 한국어로 설명해주고, SQL 결과를 요약해줘',
+    description: '사용자 맞춤형 지침 (AI 채팅 시 적용)',
+    required: false 
+  })
+  @IsString()
+  @IsOptional()
+  customInstructions?: string;
+}

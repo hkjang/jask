@@ -17,6 +17,7 @@ import {
   FileText,
   ShieldAlert,
   Sparkles,
+  User,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -117,8 +118,18 @@ export function Sidebar({ className }: SidebarProps) {
         ))}
       </nav>
 
-      {/* Logout */}
-      <div className="border-t p-2">
+      {/* Profile & Logout */}
+      <div className="border-t p-2 space-y-1">
+        <Link
+          href="/profile"
+          className={cn(
+            'flex items-center gap-3 rounded-lg px-3 py-2 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground',
+            collapsed && 'justify-center'
+          )}
+        >
+          <User className="h-5 w-5" />
+          {!collapsed && <span>프로필</span>}
+        </Link>
         <Button
           variant="ghost"
           className={cn('w-full justify-start gap-3', collapsed && 'justify-center')}
