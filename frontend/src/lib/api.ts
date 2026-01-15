@@ -98,6 +98,14 @@ class ApiClient {
     return this.request<any[]>('/datasources');
   }
 
+  async getDataSourcesOverview() {
+    return this.request<any>('/datasources/overview');
+  }
+
+  async getConnectionTemplates() {
+    return this.request<any[]>('/datasources/templates');
+  }
+
   async createDataSource(data: any) {
     return this.request('/datasources', { method: 'POST', body: data });
   }
@@ -112,6 +120,18 @@ class ApiClient {
 
   async deleteDataSource(id: string) {
     return this.request(`/datasources/${id}`, { method: 'DELETE' });
+  }
+
+  async getDataSourceHealth(id: string) {
+    return this.request<any>(`/datasources/${id}/health`);
+  }
+
+  async getDataSourceStatistics(id: string) {
+    return this.request<any>(`/datasources/${id}/statistics`);
+  }
+
+  async refreshDataSourceConnection(id: string) {
+    return this.request<any>(`/datasources/${id}/refresh-connection`, { method: 'POST' });
   }
 
   async syncMetadata(dataSourceId: string) {
