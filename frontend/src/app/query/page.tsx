@@ -39,6 +39,7 @@ import { ThreadSidebar } from '@/components/chat/ThreadSidebar';
 import { CommentSection } from './_components/comment-section';
 import { FeedbackDialog } from './_components/feedback-dialog';
 import { TableSchemaViewer } from './_components/table-schema-viewer';
+import { SimulationDialog } from './_components/simulation-dialog';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -82,7 +83,8 @@ import {
   PanelRightClose,
   Star,
   MessageSquare, // Add this
-  Share2 // Add this
+  Share2, // Add this
+  Eye // Simulation icon
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -248,6 +250,9 @@ function QueryPageContent() {
 
   // Schema Viewer State
   const [schemaViewerSql, setSchemaViewerSql] = useState<string | null>(null);
+
+  // Simulation Dialog State
+  const [simulationInfo, setSimulationInfo] = useState<{ question: string } | null>(null);
 
   // Destructive SQL Confirmation State
   const [pendingDestructiveExec, setPendingDestructiveExec] = useState<{
@@ -1076,6 +1081,19 @@ function QueryPageContent() {
                                   >
                                     <Database className="h-3 w-3" />
                                   </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-6 w-6 text-zinc-400 hover:text-purple-400"
+                                    onClick={() => {
+                                      const msgIndex = messages.findIndex(m => m.id === message.id);
+                                      const userMsg = messages.slice(0, msgIndex).reverse().find(m => m.role === 'user');
+                                      setSimulationInfo({ question: userMsg?.content || '' });
+                                    }}
+                                    title="AI 생성 과정 보기"
+                                  >
+                                    <Eye className="h-3 w-3" />
+                                  </Button>
                                   {message.queryId && (
                                     <Button
                                       variant={message.result ? "ghost" : "default"} // Highlight if no result
@@ -1729,6 +1747,14 @@ function QueryPageContent() {
         dataSourceId={selectedDataSource}
         open={!!schemaViewerSql}
         onOpenChange={(open) => !open && setSchemaViewerSql(null)}
+      />
+
+      {/* AI Simulation Dialog */}
+      <SimulationDialog
+        open={!!simulationInfo}
+        onOpenChange={(open) => !open && setSimulationInfo(null)}
+        dataSourceId={selectedDataSource}
+        question={simulationInfo?.question || ''}
       />
     </MainLayout>
     </TooltipProvider>

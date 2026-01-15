@@ -78,4 +78,13 @@ export class NL2SQLController {
   async recommend(@Param('dataSourceId') dataSourceId: string) {
     return this.nl2sqlService.getRecommendedQuestions(dataSourceId);
   }
+
+  @Post('simulate/:dataSourceId')
+  @ApiOperation({ summary: 'AI SQL 생성 시뮬레이션 (상세 과정 반환)' })
+  async simulate(
+    @Param('dataSourceId') dataSourceId: string,
+    @Body() body: { question: string },
+  ) {
+    return this.nl2sqlService.simulateQuery(dataSourceId, body.question);
+  }
 }

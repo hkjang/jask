@@ -762,6 +762,167 @@ ${schemaContext}`;
     return this.llmService.generateRecommendedQuestions(context, 4);
   }
 
+  // ===========================================
+  // Simulation (for admin verification)
+  // ===========================================
+  async simulateQuery(dataSourceId: string, question: string) {
+    const steps: any[] = [];
+    const startTime = Date.now();
+
+    // Fetch DataSource
+    const dataSource = await this.prisma.dataSource.findUnique({
+      where: { id: dataSourceId },
+    });
+    const dbType = dataSource?.type || 'postgresql';
+
+    // Step 1: Embedding & Vector Search
+    steps.push({ step: 1, name: 'embedding', status: 'running', startTime: Date.now() });
+    const schemaResult = await this.metadataService.searchSchemaContextWithDetails(dataSourceId, question);
+    steps[0].status = 'done';
+    steps[0].endTime = Date.now();
+    steps[0].timeMs = steps[0].endTime - steps[0].startTime;
+    steps[0].data = {
+      embedding: schemaResult.embedding,
+      search: schemaResult.search
+    };
+
+    const schemaContext = schemaResult.context;
+
+    // Step 2: Build Prompt
+    steps.push({ step: 2, name: 'prompt', status: 'running', startTime: Date.now() });
+    
+    let dbSpecificRules = '';
+    if (dbType.toLowerCase().includes('postgres')) {
+      dbSpecificRules = '6. Wrap ALL table and column names in DOUBLE QUOTES for PostgreSQL.';
+    } else if (dbType.toLowerCase().includes('oracle')) {
+      dbSpecificRules = '6. For Oracle: Use VARCHAR2, NUMBER, CLOB, SYSDATE. No LIMIT clause - use FETCH FIRST N ROWS ONLY.';
+    } else if (dbType.toLowerCase().includes('mysql')) {
+      dbSpecificRules = '6. Wrap all identifiers in BACKTICKS for MySQL.';
+    }
+
+    const systemPrompt = `You are an expert SQL query generator.
+Rules:
+1. Only generate SELECT queries
+2. Always include LIMIT clause (max 1000)
+3. Return ONLY the SQL query
+${dbSpecificRules}
+
+Database Schema:
+${schemaContext}`;
+
+    const userPrompt = question;
+
+    steps[1].status = 'done';
+    steps[1].endTime = Date.now();
+    steps[1].timeMs = steps[1].endTime - steps[1].startTime;
+    steps[1].data = {
+      systemPrompt: systemPrompt.substring(0, 1000) + (systemPrompt.length > 1000 ? '...' : ''),
+      userPrompt,
+      fullPromptLength: systemPrompt.length + userPrompt.length
+    };
+
+    // Step 3: AI Generation
+    steps.push({ step: 3, name: 'generation', status: 'running', startTime: Date.now() });
+    
+    let rawResponse = '';
+    let reasoning = '';
+    
+    try {
+      const stream = this.llmService.generateStream({
+        prompt: userPrompt,
+        systemPrompt: systemPrompt,
+        temperature: 0.1,
+        maxTokens: 2048,
+      });
+
+      for await (const chunk of stream) {
+        if (chunk.type === 'content') {
+          rawResponse += chunk.content;
+        }
+      }
+
+      // Extract reasoning from thinking models
+      const thinkMatch = rawResponse.match(/<think>([\s\S]*?)<\/think>/i);
+      const reasoningMatch = rawResponse.match(/<reasoning>([\s\S]*?)<\/reasoning>/i);
+      reasoning = thinkMatch?.[1] || reasoningMatch?.[1] || '';
+
+      steps[2].status = 'done';
+      steps[2].endTime = Date.now();
+      steps[2].timeMs = steps[2].endTime - steps[2].startTime;
+      steps[2].data = {
+        rawResponseLength: rawResponse.length,
+        hasReasoning: !!reasoning,
+        reasoning: reasoning.substring(0, 500) + (reasoning.length > 500 ? '...' : '')
+      };
+    } catch (error) {
+      steps[2].status = 'error';
+      steps[2].error = error.message;
+      steps[2].endTime = Date.now();
+      steps[2].timeMs = steps[2].endTime - steps[2].startTime;
+      
+      return {
+        success: false,
+        steps,
+        totalTimeMs: Date.now() - startTime,
+        error: error.message
+      };
+    }
+
+    // Step 4: SQL Extraction & Cleanup
+    steps.push({ step: 4, name: 'extraction', status: 'running', startTime: Date.now() });
+    
+    let generatedSql = rawResponse;
+    // Remove thinking tags
+    generatedSql = generatedSql.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+    generatedSql = generatedSql.replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, '').trim();
+    // Remove markdown
+    generatedSql = generatedSql.replace(/```sql\n?([\s\S]*?)\n?```/i, '$1').replace(/```\n?([\s\S]*?)\n?```/, '$1').trim();
+    // Extract first SQL statement
+    const sqlMatch = generatedSql.match(/(SELECT|WITH)\s+[\s\S]*?;/i);
+    if (sqlMatch) {
+      generatedSql = sqlMatch[0].replace(/;$/, '').trim();
+    }
+
+    steps[3].status = 'done';
+    steps[3].endTime = Date.now();
+    steps[3].timeMs = steps[3].endTime - steps[3].startTime;
+    steps[3].data = {
+      extractedSql: generatedSql
+    };
+
+    // Step 5: Validation
+    steps.push({ step: 5, name: 'validation', status: 'running', startTime: Date.now() });
+    
+    const validation = this.validationService.validate(generatedSql);
+    const risk = this.analyzeRisk(generatedSql);
+    const trustScore = this.calculateTrustScore(generatedSql);
+
+    steps[4].status = 'done';
+    steps[4].endTime = Date.now();
+    steps[4].timeMs = steps[4].endTime - steps[4].startTime;
+    steps[4].data = {
+      isValid: validation.isValid,
+      errors: validation.errors,
+      riskLevel: risk.level,
+      riskReasons: risk.reasons,
+      trustScore: Math.round(trustScore * 100)
+    };
+
+    const totalTimeMs = Date.now() - startTime;
+
+    return {
+      success: true,
+      steps,
+      totalTimeMs,
+      result: {
+        sql: generatedSql,
+        validation: validation.isValid,
+        riskLevel: risk.level,
+        trustScore: Math.round(trustScore * 100)
+      }
+    };
+  }
+
   // ==========================================
   // Private Helpers
   // ==========================================

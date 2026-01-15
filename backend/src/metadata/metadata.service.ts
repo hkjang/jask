@@ -699,6 +699,76 @@ export class MetadataService {
   }
 
   // ===========================================
+  // Simulation Helper - Detailed Schema Search
+  // ===========================================
+  async searchSchemaContextWithDetails(dataSourceId: string, question: string, limit: number = 20) {
+    const startTime = Date.now();
+    
+    try {
+      // 1. Generate embedding for the question
+      const embeddingStartTime = Date.now();
+      const embedding = await this.llmService.generateEmbedding(question);
+      const embeddingTime = Date.now() - embeddingStartTime;
+      const vectorStr = `[${embedding.join(',')}]`;
+
+      // 2. Perform Vector Search for tables with scores
+      const searchStartTime = Date.now();
+      const results = await this.prisma.$queryRaw<any[]>`
+        SELECT t."id", t."tableName", t."schemaName", t."description", s."content", 
+               (1 - (s."embedding" <=> ${vectorStr}::vector)) as similarity
+        FROM "SchemaEmbedding" s
+        JOIN "TableMetadata" t ON s."tableId" = t."id"
+        WHERE t."dataSourceId" = ${dataSourceId} AND t."isExcluded" = false
+        ORDER BY similarity DESC
+        LIMIT ${limit}
+      `;
+      const searchTime = Date.now() - searchStartTime;
+
+      // 3. Build context
+      let context = '';
+      const selectedTables: { tableName: string; schemaName: string; similarity: number; description?: string }[] = [];
+      
+      for (const row of results) {
+        selectedTables.push({
+          tableName: row.tableName,
+          schemaName: row.schemaName,
+          similarity: parseFloat(row.similarity?.toFixed(4) || '0'),
+          description: row.description
+        });
+        context += `${row.content}\n\n`;
+      }
+
+      const totalTime = Date.now() - startTime;
+
+      return {
+        success: true,
+        embedding: {
+          dimensions: embedding.length,
+          timeMs: embeddingTime
+        },
+        search: {
+          selectedTables,
+          totalFound: results.length,
+          timeMs: searchTime
+        },
+        context: context.trim(),
+        totalTimeMs: totalTime
+      };
+
+    } catch (error) {
+      this.logger.error(`Detailed schema search failed: ${error.message}`);
+      return {
+        success: false,
+        error: error.message,
+        context: await this.getSchemaContext(dataSourceId),
+        embedding: null,
+        search: null,
+        totalTimeMs: Date.now() - startTime
+      };
+    }
+  }
+
+  // ===========================================
   // Recommendation Helper
   // ===========================================
   async getReviewableSchemaContext(dataSourceId: string, limit: number = 20): Promise<string> {

@@ -188,6 +188,13 @@ class ApiClient {
     });
   }
 
+  async simulateQuery(dataSourceId: string, question: string) {
+    return this.request<any>('/nl2sql/simulate/' + dataSourceId, {
+      method: 'POST',
+      body: { question },
+    });
+  }
+
   async *generateQueryStream(dataSourceId: string, question: string, autoExecute = false, threadId?: string): AsyncGenerator<any> {
     const token = this.getToken();
     const headers: any = { 'Content-Type': 'application/json' };

@@ -1,16 +1,35 @@
 "use client";
 
+import { useState, useEffect } from "react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Sparkles, Play, RefreshCw, ChevronDown, ChevronRight, Copy, Check, Database, Brain, FileText, Shield, Clock, GripVertical } from "lucide-react";
-import { Textarea } from "@/components/ui/textarea";
-import { useState, useRef, useCallback, useEffect } from "react";
-import { api } from "@/lib/api";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
+import { 
+  ChevronDown, 
+  ChevronRight, 
+  Copy, 
+  Check, 
+  Database, 
+  Brain, 
+  FileText, 
+  Shield, 
+  Clock,
+  RefreshCw,
+  Sparkles
+} from "lucide-react";
+import { api } from "@/lib/api";
 
-interface MetadataPreviewProps {
+interface SimulationDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
   dataSourceId: string;
-  context: string;
+  question: string;
 }
 
 interface SimulationStep {
@@ -188,65 +207,25 @@ function StepCard({ step, isExpanded, onToggle }: { step: SimulationStep; isExpa
   );
 }
 
-export function MetadataPreview({ dataSourceId, context }: MetadataPreviewProps) {
-  const [query, setQuery] = useState("");
+export function SimulationDialog({ open, onOpenChange, dataSourceId, question }: SimulationDialogProps) {
   const [simulation, setSimulation] = useState<any>(null);
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState("context");
   const [expandedSteps, setExpandedSteps] = useState<Set<number>>(new Set());
   const [copied, setCopied] = useState(false);
-  
-  // Resizable panel state
-  const [panelWidth, setPanelWidth] = useState(384); // 24rem = 384px
-  const [isResizing, setIsResizing] = useState(false);
-  const panelRef = useRef<HTMLDivElement>(null);
-
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    setIsResizing(true);
-  }, []);
-
-  const handleMouseMove = useCallback((e: MouseEvent) => {
-    if (!isResizing || !panelRef.current) return;
-    
-    const containerRight = window.innerWidth;
-    const newWidth = containerRight - e.clientX;
-    // Clamp width between 280px and 800px
-    setPanelWidth(Math.min(800, Math.max(280, newWidth)));
-  }, [isResizing]);
-
-  const handleMouseUp = useCallback(() => {
-    setIsResizing(false);
-  }, []);
 
   useEffect(() => {
-    if (isResizing) {
-      window.addEventListener('mousemove', handleMouseMove);
-      window.addEventListener('mouseup', handleMouseUp);
-      document.body.style.cursor = 'ew-resize';
-      document.body.style.userSelect = 'none';
-    } else {
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
+    if (open && dataSourceId && question) {
+      runSimulation();
     }
-    return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
-    };
-  }, [isResizing, handleMouseMove, handleMouseUp]);
+  }, [open, dataSourceId, question]);
 
-  const handleSimulate = async () => {
-    if (!query.trim() || !dataSourceId) return;
+  const runSimulation = async () => {
     setLoading(true);
     setSimulation(null);
     setExpandedSteps(new Set());
     try {
-      const res = await api.simulateQuery(dataSourceId, query);
+      const res = await api.simulateQuery(dataSourceId, question);
       setSimulation(res);
-      setActiveTab("simulation");
-      // Auto-expand first few steps
       if (res.steps) {
         setExpandedSteps(new Set([1, 2]));
       }
@@ -278,129 +257,98 @@ export function MetadataPreview({ dataSourceId, context }: MetadataPreviewProps)
   };
 
   return (
-    <div 
-      ref={panelRef}
-      className="border-l bg-slate-50 flex flex-col h-full shadow-inner relative"
-      style={{ width: panelWidth }}
-    >
-      {/* Resize Handle */}
-      <div
-        onMouseDown={handleMouseDown}
-        className={`absolute left-0 top-0 bottom-0 w-1 cursor-ew-resize hover:bg-primary/50 transition-colors z-10 group flex items-center ${isResizing ? 'bg-primary/50' : ''}`}
-      >
-        <div className="absolute left-0 w-4 h-12 -translate-x-1/2 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-          <GripVertical className="h-4 w-4 text-muted-foreground" />
-        </div>
-      </div>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Sparkles className="h-5 w-5 text-primary" />
+            AI 생성 시뮬레이션
+          </DialogTitle>
+          <DialogDescription className="flex items-center justify-between">
+            <span className="truncate">{question}</span>
+            {simulation && (
+              <Badge variant="outline" className="ml-2 shrink-0">
+                {simulation.totalTimeMs}ms
+              </Badge>
+            )}
+          </DialogDescription>
+        </DialogHeader>
 
-      <div className="p-4 border-b bg-white">
-        <h2 className="font-semibold flex items-center gap-2 text-primary">
-          <Sparkles className="h-4 w-4" /> AI 미리보기
-        </h2>
-        <p className="text-xs text-muted-foreground mt-1">
-          AI가 메타데이터를 어떻게 해석하는지 단계별로 확인하세요.
-        </p>
-      </div>
-
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <div className="px-4 pt-2 border-b bg-muted/10">
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-                <TabsList className="w-full">
-                    <TabsTrigger value="context" className="flex-1">컨텍스트</TabsTrigger>
-                    <TabsTrigger value="simulation" className="flex-1">시뮬레이션</TabsTrigger>
-                </TabsList>
-            </Tabs>
-        </div>
-
-        {activeTab === 'context' && (
-            <div className="flex-1 overflow-auto p-4 font-mono text-[10px] text-muted-foreground whitespace-pre-wrap leading-tight bg-slate-50">
-                {context ? context : "컨텍스트를 보려면 데이터 소스를 선택하세요..."}
+        <div className="flex-1 overflow-auto space-y-3 py-4">
+          {loading && (
+            <div className="flex items-center justify-center py-12">
+              <RefreshCw className="h-8 w-8 animate-spin text-primary" />
+              <span className="ml-3 text-muted-foreground">시뮬레이션 중...</span>
             </div>
-        )}
+          )}
 
-        {activeTab === 'simulation' && (
-            <div className="flex-1 overflow-auto p-4 space-y-4">
-                <div className="space-y-2">
-                    <label className="text-xs font-semibold">테스트 질문</label>
-                    <Textarea 
-                        placeholder="예: 활성 사용자 찾기..." 
-                        className="text-xs min-h-[60px]"
-                        value={query}
-                        onChange={(e) => setQuery(e.target.value)} 
-                    />
-                    <Button 
-                        size="sm" 
-                        className="w-full" 
-                        onClick={handleSimulate} 
-                        disabled={loading || !dataSourceId}
-                    >
-                        {loading ? <RefreshCw className="h-3 w-3 mr-2 animate-spin" /> : <Play className="h-3 w-3 mr-2" />}
-                        {loading ? '시뮬레이션 중...' : '시뮬레이션 실행'}
-                    </Button>
+          {simulation && !loading && (
+            <>
+              {/* Summary Header */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Badge variant={simulation.success ? 'default' : 'destructive'}>
+                    {simulation.success ? '성공' : '실패'}
+                  </Badge>
+                  <span className="text-xs text-muted-foreground">
+                    총 {simulation.totalTimeMs}ms
+                  </span>
                 </div>
+                <div className="flex gap-2">
+                  {simulation.result?.sql && (
+                    <Button variant="outline" size="sm" onClick={copySql} className="h-7">
+                      {copied ? <Check className="h-3 w-3 mr-1" /> : <Copy className="h-3 w-3 mr-1" />}
+                      SQL 복사
+                    </Button>
+                  )}
+                  <Button variant="outline" size="sm" onClick={runSimulation} className="h-7">
+                    <RefreshCw className="h-3 w-3 mr-1" />
+                    다시 실행
+                  </Button>
+                </div>
+              </div>
 
-                {simulation && (
-                    <div className="space-y-3 pt-4 border-t">
-                        {/* Summary Header */}
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <Badge variant={simulation.success ? 'default' : 'destructive'}>
-                              {simulation.success ? '성공' : '실패'}
-                            </Badge>
-                            <span className="text-xs text-muted-foreground">
-                              총 {simulation.totalTimeMs}ms
-                            </span>
-                          </div>
-                          {simulation.result?.sql && (
-                            <Button variant="ghost" size="sm" onClick={copySql} className="h-7">
-                              {copied ? <Check className="h-3 w-3 mr-1" /> : <Copy className="h-3 w-3 mr-1" />}
-                              SQL 복사
-                            </Button>
-                          )}
-                        </div>
+              {/* Steps */}
+              <div className="space-y-2">
+                {simulation.steps?.map((step: SimulationStep) => (
+                  <StepCard
+                    key={step.step}
+                    step={step}
+                    isExpanded={expandedSteps.has(step.step)}
+                    onToggle={() => toggleStep(step.step)}
+                  />
+                ))}
+              </div>
 
-                        {/* Steps */}
-                        <div className="space-y-2">
-                          {simulation.steps?.map((step: SimulationStep) => (
-                            <StepCard
-                              key={step.step}
-                              step={step}
-                              isExpanded={expandedSteps.has(step.step)}
-                              onToggle={() => toggleStep(step.step)}
-                            />
-                          ))}
-                        </div>
-
-                        {/* Final SQL Card */}
-                        {simulation.result?.sql && (
-                          <div className="p-3 border rounded-lg bg-slate-900">
-                            <div className="flex items-center justify-between mb-2">
-                              <span className="text-xs font-semibold text-green-400">최종 SQL</span>
-                              <div className="flex gap-2">
-                                <Badge variant="outline" className="text-[10px] border-slate-600 text-slate-300">
-                                  {simulation.result.riskLevel}
-                                </Badge>
-                                <Badge variant="outline" className="text-[10px] border-slate-600 text-slate-300">
-                                  신뢰도 {simulation.result.trustScore}%
-                                </Badge>
-                              </div>
-                            </div>
-                            <pre className="text-green-400 font-mono text-xs overflow-x-auto whitespace-pre-wrap">
-                              {simulation.result.sql}
-                            </pre>
-                          </div>
-                        )}
-
-                        {simulation.error && (
-                          <div className="text-xs text-red-500 bg-red-50 p-2 rounded">
-                            오류: {simulation.error}
-                          </div>
-                        )}
+              {/* Final SQL Card */}
+              {simulation.result?.sql && (
+                <div className="p-3 border rounded-lg bg-slate-900">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-semibold text-green-400">최종 SQL</span>
+                    <div className="flex gap-2">
+                      <Badge variant="outline" className="text-[10px] border-slate-600 text-slate-300">
+                        {simulation.result.riskLevel}
+                      </Badge>
+                      <Badge variant="outline" className="text-[10px] border-slate-600 text-slate-300">
+                        신뢰도 {simulation.result.trustScore}%
+                      </Badge>
                     </div>
-                )}
-            </div>
-        )}
-      </div>
-    </div>
+                  </div>
+                  <pre className="text-green-400 font-mono text-xs overflow-x-auto whitespace-pre-wrap">
+                    {simulation.result.sql}
+                  </pre>
+                </div>
+              )}
+
+              {simulation.error && (
+                <div className="text-xs text-red-500 bg-red-50 p-2 rounded">
+                  오류: {simulation.error}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
