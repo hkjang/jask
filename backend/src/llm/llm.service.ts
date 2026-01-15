@@ -149,7 +149,16 @@ ${schemaContext}`;
     return this.extractSQL(response.content);
   }
 
-  async fixSQL(invalidSql: string, errorMessage: string, schemaContext: string): Promise<string> {
+  async fixSQL(invalidSql: string, errorMessage: string, schemaContext: string, dbType: string = 'postgresql'): Promise<string> {
+    let dbSpecificRules = '';
+    if (dbType.toLowerCase().includes('postgres')) {
+      dbSpecificRules = '\n6. CRITICAL: You MUST wrap ALL table and column names in DOUBLE QUOTES (e.g. "TableName", "columnName"). PostgreSQL is case-sensitive for unquoted identifiers.';
+    } else if (dbType.toLowerCase().includes('mysql') || dbType.toLowerCase().includes('mariadb')) {
+      dbSpecificRules = '\n6. You MUST wrap all table and column names in BACKTICKS (e.g. `TableName`, `ColumnName`).';
+    } else if (dbType.toLowerCase().includes('oracle')) {
+      dbSpecificRules = '\n6. For Oracle: Use VARCHAR2, NUMBER, DATE. Use FETCH FIRST N ROWS ONLY for limiting. Do NOT use information_schema.';
+    }
+
     const systemPrompt = `You are an expert SQL debugger. The user has a query that failed to execute. Fix the SQL based on the error message.
     
 Rules:
@@ -157,7 +166,7 @@ Rules:
 2. Maintain the original intent of the query.
 3. Fix syntax errors or logic issues mentioned in the error message.
 4. Ensure compatibility with the database schema.
-5. Do NOT use complex proprietary functions unless supported.
+5. Do NOT use complex proprietary functions unless supported.${dbSpecificRules}
 
 Database Schema:
 ${schemaContext}`;

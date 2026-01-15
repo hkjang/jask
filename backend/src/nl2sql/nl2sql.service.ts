@@ -361,7 +361,7 @@ ${schemaContext}`;
           yield { type: 'step_start', step: 'auto_fix', message: 'SQL 실행 오류 발생, 자동 수정 시도 중...' };
           
           try {
-              const fixedSql = await this.llmService.fixSQL(validation.sanitizedSql || generatedSql, error.message, schemaContext);
+              const fixedSql = await this.llmService.fixSQL(validation.sanitizedSql || generatedSql, error.message, schemaContext, dbType);
               this.logger.log(`Auto-fixed SQL: ${fixedSql}`);
               
               const retryResult = await this.executionService.execute(
@@ -647,7 +647,7 @@ ${schemaContext}`;
       try {
         const schemaContext = await this.metadataService.getSchemaContext(query.dataSourceId);
         if (schemaContext) {
-           const fixedSql = await this.llmService.fixSQL(validation.sanitizedSql || finalSql, error.message, schemaContext);
+           const fixedSql = await this.llmService.fixSQL(validation.sanitizedSql || finalSql, error.message, schemaContext, query.dataSource.type);
            
            const retryResult = await this.executionService.execute(
             query.dataSourceId,

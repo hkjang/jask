@@ -47,9 +47,9 @@ export class OllamaProvider {
     };
 
     try {
-      // 120초 타임아웃
+      // 600초 타임아웃 (10분)
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 120000);
+      const timeout = setTimeout(() => controller.abort(), 600000);
 
       this.logger.log(`Ollama 요청: ${config.model} at ${config.baseUrl}`);
 
@@ -83,7 +83,7 @@ export class OllamaProvider {
 
     } catch (error: any) {
       if (error.name === 'AbortError') {
-        this.logger.error('Ollama 요청 타임아웃 (120초)');
+        this.logger.error('Ollama 요청 타임아웃 (600초)');
         throw new Error('LLM 요청 시간 초과. Ollama 서버가 실행 중인지 확인하세요.');
       }
       this.logger.error(`Ollama generation failed: ${error.message}`);

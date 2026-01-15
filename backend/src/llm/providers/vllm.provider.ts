@@ -57,7 +57,7 @@ interface VLLMErrorResponse {
 @Injectable()
 export class VLLMProvider {
   private readonly logger = new Logger(VLLMProvider.name);
-  private readonly DEFAULT_TIMEOUT_MS = 120000; // 120 seconds
+  private readonly DEFAULT_TIMEOUT_MS = 600000; // 600 seconds (10 minutes)
 
   async generate(
     request: LLMRequest,
@@ -121,7 +121,7 @@ export class VLLMProvider {
       };
     } catch (error: any) {
       if (error.name === 'AbortError') {
-        this.logger.error('vLLM 요청 타임아웃 (120초)');
+        this.logger.error('vLLM 요청 타임아웃 (600초)');
         throw new Error('LLM 요청 시간 초과. vLLM 서버가 실행 중인지 확인하세요.');
       }
       this.logger.error(`vLLM generation failed: ${error.message}`);
@@ -251,7 +251,7 @@ export class VLLMProvider {
       yield { type: 'done' };
     } catch (error: any) {
       if (error.name === 'AbortError') {
-        this.logger.error('vLLM Stream 요청 타임아웃 (120초)');
+        this.logger.error('vLLM Stream 요청 타임아웃 (600초)');
         yield { type: 'error', error: 'LLM 요청 시간 초과. vLLM 서버가 실행 중인지 확인하세요.' };
       } else {
         this.logger.error(`vLLM stream failed: ${error.message}`);
@@ -307,7 +307,7 @@ export class VLLMProvider {
       return data.data[0].embedding;
     } catch (error: any) {
       if (error.name === 'AbortError') {
-        this.logger.error('vLLM Embedding 요청 타임아웃 (120초)');
+        this.logger.error('vLLM Embedding 요청 타임아웃 (600초)');
         throw new Error('LLM 임베딩 요청 시간 초과. vLLM 서버가 실행 중인지 확인하세요.');
       }
       this.logger.error(`vLLM embedding failed: ${error.message}`);
