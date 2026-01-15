@@ -725,6 +725,79 @@ export default function AdminSettingsPage() {
               </Dialog>
             </div>
 
+            {/* Available Settings Reference */}
+            <Card className="bg-blue-50/50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Database className="h-4 w-4 text-blue-600" />
+                  사용 가능한 설정 키 안내
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                  <div className="space-y-3">
+                    <div className="font-semibold text-muted-foreground mb-2">🔐 보안 & 권한</div>
+                    <div className="space-y-2">
+                      <div>
+                        <code className="bg-background px-1.5 py-0.5 rounded text-xs font-bold">sql_allow_ddl</code>
+                        <p className="text-xs text-muted-foreground mt-0.5">DDL(CREATE/ALTER/DROP) 허용 여부 (true/false)</p>
+                      </div>
+                      <div>
+                        <code className="bg-background px-1.5 py-0.5 rounded text-xs font-bold">sql_allow_writes</code>
+                        <p className="text-xs text-muted-foreground mt-0.5">DML(INSERT/UPDATE/DELETE) 허용 여부 (true/false)</p>
+                      </div>
+                      <div>
+                        <code className="bg-background px-1.5 py-0.5 rounded text-xs font-bold">allow_custom_instructions</code>
+                        <p className="text-xs text-muted-foreground mt-0.5">사용자별 AI 맞춤형 지침 허용 여부 (true/false)</p>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-3">
+                    <div className="font-semibold text-muted-foreground mb-2">⚡ 자동 실행</div>
+                    <div className="space-y-2">
+                      <div>
+                        <code className="bg-background px-1.5 py-0.5 rounded text-xs font-bold">auto_execute_enabled</code>
+                        <p className="text-xs text-muted-foreground mt-0.5">신뢰도 기준 자동 실행 활성화 (true/false)</p>
+                      </div>
+                      <div>
+                        <code className="bg-background px-1.5 py-0.5 rounded text-xs font-bold">confirm_threshold</code>
+                        <p className="text-xs text-muted-foreground mt-0.5">자동 실행 신뢰도 임계값 (0-100, 기본: 80)</p>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-3">
+                    <div className="font-semibold text-muted-foreground mb-2">📊 쿼리 제한</div>
+                    <div className="space-y-2">
+                      <div>
+                        <code className="bg-background px-1.5 py-0.5 rounded text-xs font-bold">max_rows</code>
+                        <p className="text-xs text-muted-foreground mt-0.5">최대 반환 행 수 (기본: 1000)</p>
+                      </div>
+                      <div>
+                        <code className="bg-background px-1.5 py-0.5 rounded text-xs font-bold">query_timeout</code>
+                        <p className="text-xs text-muted-foreground mt-0.5">쿼리 타임아웃 (ms, 기본: 30000)</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div className="font-semibold text-muted-foreground mb-2">🤖 AI 설정</div>
+                    <div className="space-y-2">
+                      <div>
+                        <code className="bg-background px-1.5 py-0.5 rounded text-xs font-bold">default_llm_provider</code>
+                        <p className="text-xs text-muted-foreground mt-0.5">기본 LLM 프로바이더 ID</p>
+                      </div>
+                      <div>
+                        <code className="bg-background px-1.5 py-0.5 rounded text-xs font-bold">embedding_model</code>
+                        <p className="text-xs text-muted-foreground mt-0.5">임베딩 모델 이름 (예: nomic-embed-text)</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
             <Card>
               <CardContent className="p-0">
                 <div className="divide-y">

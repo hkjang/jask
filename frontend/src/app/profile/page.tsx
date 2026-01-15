@@ -21,6 +21,7 @@ import {
   Sparkles,
   HelpCircle,
   Calendar,
+  Lock,
 } from 'lucide-react';
 import {
   Dialog,
@@ -53,6 +54,25 @@ export default function ProfilePage() {
     queryKey: ['profile'],
     queryFn: () => api.get<UserProfile>('/auth/profile'),
   });
+
+  // Fetch system settings to check if custom instructions are allowed
+  const { data: settings = {} } = useQuery<Record<string, any>>({
+    queryKey: ['systemSettings'],
+    queryFn: async () => {
+      try {
+        const response = await fetch('/api/admin/settings', {
+          headers: { 'Authorization': `Bearer ${api.getToken()}` },
+        });
+        if (!response.ok) return {};
+        return response.json();
+      } catch {
+        return {};
+      }
+    },
+    staleTime: 1000 * 60 * 5, // Cache for 5 minutes
+  });
+
+  const allowCustomInstructions = settings['allow_custom_instructions'] ?? true; // Default to true if not set
 
   useEffect(() => {
     if (profile) {
@@ -178,62 +198,77 @@ export default function ProfilePage() {
         </Card>
 
         {/* Custom Instructions Card */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="flex items-center gap-2">
-                  <Sparkles className="h-5 w-5 text-primary" />
-                  AI 맞춤형 지침
-                </CardTitle>
-                <CardDescription>
-                  질문 시 AI가 참고할 개인 맞춤형 지침을 설정하세요
-                </CardDescription>
-              </div>
-              <Dialog>
-                <DialogTrigger asChild>
-                  <Button variant="ghost" size="icon">
-                    <HelpCircle className="h-5 w-5" />
-                  </Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>맞춤형 지침이란?</DialogTitle>
-                    <DialogDescription asChild>
-                      <div className="space-y-4 pt-4">
-                        <p>
-                          맞춤형 지침은 AI가 SQL을 생성하고 설명할 때 참고하는 개인 설정입니다.
-                          여기에 입력한 내용이 AI 시스템 프롬프트에 자동으로 추가됩니다.
-                        </p>
-                        <div className="space-y-2">
-                          <p className="font-medium">예시:</p>
-                          <ul className="list-disc list-inside text-sm space-y-1 text-muted-foreground">
-                            <li>항상 한국어로 설명해줘</li>
-                            <li>SQL 결과를 표 형식으로 요약해줘</li>
-                            <li>복잡한 JOIN 쿼리는 단계별로 설명해줘</li>
-                            <li>성능 최적화 팁도 함께 알려줘</li>
-                            <li>주석을 SQL에 포함해줘</li>
-                          </ul>
+        {allowCustomInstructions ? (
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <Sparkles className="h-5 w-5 text-primary" />
+                    AI 맞춤형 지침
+                  </CardTitle>
+                  <CardDescription>
+                    질문 시 AI가 참고할 개인 맞춤형 지침을 설정하세요
+                  </CardDescription>
+                </div>
+                <Dialog>
+                  <DialogTrigger asChild>
+                    <Button variant="ghost" size="icon">
+                      <HelpCircle className="h-5 w-5" />
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>맞춤형 지침이란?</DialogTitle>
+                      <DialogDescription asChild>
+                        <div className="space-y-4 pt-4">
+                          <p>
+                            맞춤형 지침은 AI가 SQL을 생성하고 설명할 때 참고하는 개인 설정입니다.
+                            여기에 입력한 내용이 AI 시스템 프롬프트에 자동으로 추가됩니다.
+                          </p>
+                          <div className="space-y-2">
+                            <p className="font-medium">예시:</p>
+                            <ul className="list-disc list-inside text-sm space-y-1 text-muted-foreground">
+                              <li>항상 한국어로 설명해줘</li>
+                              <li>SQL 결과를 표 형식으로 요약해줘</li>
+                              <li>복잡한 JOIN 쿼리는 단계별로 설명해줘</li>
+                              <li>성능 최적화 팁도 함께 알려줘</li>
+                              <li>주석을 SQL에 포함해줘</li>
+                            </ul>
+                          </div>
                         </div>
-                      </div>
-                    </DialogDescription>
-                  </DialogHeader>
-                </DialogContent>
-              </Dialog>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <Textarea
-              value={customInstructions}
-              onChange={(e) => setCustomInstructions(e.target.value)}
-              placeholder="AI가 참고할 맞춤형 지침을 입력하세요...&#10;&#10;예: 항상 한국어로 설명해주고, SQL 결과를 요약해줘"
-              className="min-h-[150px] resize-y"
-            />
-            <p className="text-xs text-muted-foreground">
-              💡 입력한 지침은 질문할 때마다 AI 시스템 프롬프트에 자동으로 포함됩니다.
-            </p>
-          </CardContent>
-        </Card>
+                      </DialogDescription>
+                    </DialogHeader>
+                  </DialogContent>
+                </Dialog>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <Textarea
+                value={customInstructions}
+                onChange={(e) => setCustomInstructions(e.target.value)}
+                placeholder="AI가 참고할 맞춤형 지침을 입력하세요...&#10;&#10;예: 항상 한국어로 설명해주고, SQL 결과를 요약해줘"
+                className="min-h-[150px] resize-y"
+              />
+              <p className="text-xs text-muted-foreground">
+                💡 입력한 지침은 질문할 때마다 AI 시스템 프롬프트에 자동으로 포함됩니다.
+              </p>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card className="border-muted bg-muted/20">
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <Lock className="h-5 w-5 text-muted-foreground" />
+                <CardTitle className="text-muted-foreground">AI 맞춤형 지침</CardTitle>
+              </div>
+              <CardDescription>
+                이 기능은 현재 시스템 설정에 의해 비활성화되어 있습니다.
+                관리자에게 문의하세요.
+              </CardDescription>
+            </CardHeader>
+          </Card>
+        )}
 
         <Separator />
 
