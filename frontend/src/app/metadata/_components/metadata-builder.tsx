@@ -10,7 +10,7 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { 
   Layout, Save, Info, Plus, Columns, Network, Tag, 
-  Trash2, SlidersHorizontal, AlertCircle, Table as TableIcon
+  Trash2, SlidersHorizontal, AlertCircle, Table as TableIcon, Eye, Code
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { api } from "@/lib/api";
@@ -151,11 +151,18 @@ export function MetadataBuilder({ table, onUpdate }: MetadataBuilderProps) {
       <div className="p-4 border-b flex justify-between items-center bg-card shadow-sm z-10">
         <div>
           <h1 className="text-xl font-bold flex items-center gap-2">
-            <Layout className="h-5 w-5 text-primary" />
+            {table.tableType === 'VIEW' ? (
+              <Eye className="h-5 w-5 text-blue-500" />
+            ) : (
+              <Layout className="h-5 w-5 text-primary" />
+            )}
             {table.tableName}
+            {table.tableType === 'VIEW' && <Badge className="ml-2 bg-blue-100 text-blue-700 border-blue-200">VIEW</Badge>}
             {formData.isExcluded && <Badge variant="destructive" className="ml-2">제외됨</Badge>}
           </h1>
-          <p className="text-sm text-muted-foreground">{table.schemaName} • {table.rowCount?.toLocaleString()} 행</p>
+          <p className="text-sm text-muted-foreground">
+            {table.schemaName} • {table.tableType === 'VIEW' ? 'VIEW' : `${table.rowCount?.toLocaleString() || 0} 행`}
+          </p>
         </div>
         <div className="flex gap-2">
           <Button size="sm" variant="outline" onClick={async () => {
@@ -204,6 +211,19 @@ export function MetadataBuilder({ table, onUpdate }: MetadataBuilderProps) {
             </div>
 
             <TabsContent value="general" className="flex-1 overflow-auto p-6 space-y-6 mt-0">
+              {/* VIEW Definition Card - Only shown for VIEWs */}
+              {table.tableType === 'VIEW' && table.viewDefinition && (
+                <Card className="p-4 border-blue-200 bg-blue-50/30">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Code className="h-4 w-4 text-blue-600" />
+                    <h3 className="font-semibold text-blue-800">뷰 정의 (View Definition)</h3>
+                  </div>
+                  <pre className="text-xs bg-slate-900 text-slate-100 p-3 rounded-md overflow-x-auto max-h-[200px] overflow-y-auto">
+                    <code>{table.viewDefinition}</code>
+                  </pre>
+                </Card>
+              )}
+
               <Card className="p-6 space-y-4">
                 <div className="flex justify-between items-center">
                     <h3 className="font-semibold text-lg flex items-center gap-2">기본 정보</h3>

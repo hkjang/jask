@@ -1,7 +1,7 @@
 "use client"; 
 
 import { Button } from "@/components/ui/button";
-import { Database, Table, Search, MoreHorizontal, Pencil, Trash2, Plus, Sparkles, FileSymlink, Circle, AlertTriangle } from "lucide-react";
+import { Database, Table, Search, MoreHorizontal, Pencil, Trash2, Plus, Sparkles, FileSymlink, Circle, AlertTriangle, Eye, LayoutGrid } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { 
@@ -55,6 +55,7 @@ export function MetadataSidebar({
 }: MetadataSidebarProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
+  const [typeFilter, setTypeFilter] = useState("ALL"); // TABLE, VIEW, ALL
   const { toast } = useToast();
   const router = useRouter();
 
@@ -83,8 +84,13 @@ export function MetadataSidebar({
     const matchesSearch = t.tableName.toLowerCase().includes(searchTerm.toLowerCase()) || 
                           t.description?.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesStatus = statusFilter === "ALL" || (t.metadataStatus || 'DRAFT') === statusFilter;
-    return matchesSearch && matchesStatus;
+    const matchesType = typeFilter === "ALL" || (t.tableType || 'TABLE') === typeFilter;
+    return matchesSearch && matchesStatus && matchesType;
   });
+
+  // Count tables and views for display
+  const tableCount = filteredTables.filter(t => (t.tableType || 'TABLE') === 'TABLE').length;
+  const viewCount = filteredTables.filter(t => t.tableType === 'VIEW').length;
 
   const handleEditClick = (ds: any) => {
       setEditingDataSource(ds);
@@ -258,10 +264,21 @@ export function MetadataSidebar({
                        <SelectItem value="VERIFIED">Verified</SelectItem>
                    </SelectContent>
                </Select>
+
+                <Select value={typeFilter} onValueChange={setTypeFilter}>
+                    <SelectTrigger className="h-7 text-xs w-full">
+                        <SelectValue placeholder="All Types" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="ALL">📋 All Types</SelectItem>
+                        <SelectItem value="TABLE">📋 Tables Only</SelectItem>
+                        <SelectItem value="VIEW">👁️ Views Only</SelectItem>
+                    </SelectContent>
+                </Select>
            </div>
            <div className="flex-1 overflow-auto p-2 space-y-0.5">
              <div className="text-xs font-semibold text-muted-foreground px-2 py-1 mb-1 flex justify-between">
-               <span>Tables ({filteredTables.length})</span>
+               <span>Tables ({tableCount}) / Views ({viewCount})</span>
              </div>
              {filteredTables.map((t) => (
                 <Button
@@ -271,8 +288,16 @@ export function MetadataSidebar({
                   className={`w-full justify-start text-xs h-8 ${t.isExcluded ? 'opacity-50 line-through' : ''}`}
                   onClick={() => onSelectTable(t.id)}
                 >
-                  <StatusIcon status={t.metadataStatus} score={t.completenessScore} />
-                  <span className="truncate flex-1 text-left ml-2">{t.tableName}</span>
+                  {/* Type Icon - VIEW vs TABLE */}
+                  {t.tableType === 'VIEW' ? (
+                    <Eye className="h-3 w-3 text-blue-500 shrink-0" />
+                  ) : (
+                    <StatusIcon status={t.metadataStatus} score={t.completenessScore} />
+                  )}
+                  <span className="truncate flex-1 text-left ml-2">
+                    {t.tableName}
+                    {t.tableType === 'VIEW' && <span className="text-blue-500 text-[10px] ml-1">[VIEW]</span>}
+                  </span>
                   {t.importanceLevel === 'HIGH' && <span className="w-1.5 h-1.5 rounded-full bg-orange-500 ml-1" />}
                   {t.importanceLevel === 'CRITICAL' && <span className="w-1.5 h-1.5 rounded-full bg-red-500 ml-1" />}
                 </Button>

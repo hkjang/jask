@@ -21,6 +21,8 @@ interface TableInfo {
   tableName: string;
   description?: string;
   rowCount?: number;
+  tableType?: 'TABLE' | 'VIEW' | 'MATERIALIZED_VIEW';  // Object type
+  viewDefinition?: string;                              // View SQL definition
 }
 
 interface ColumnInfo {
@@ -83,6 +85,8 @@ export class MetadataService {
         },
         update: {
           rowCount: table.rowCount,
+          tableType: table.tableType || 'TABLE',
+          viewDefinition: table.viewDefinition,
         },
         create: {
           dataSourceId,
@@ -90,6 +94,8 @@ export class MetadataService {
           tableName: table.tableName,
           description: table.description,
           rowCount: table.rowCount,
+          tableType: table.tableType || 'TABLE',
+          viewDefinition: table.viewDefinition,
         },
       });
 
@@ -267,11 +273,12 @@ export class MetadataService {
     // Oracle: Normalize schema to uppercase (Oracle is case-insensitive for identifiers)
     const normalizedSchema = schema?.toUpperCase() || '';
     
-    // Oracle: Get table list from USER_TABLES or ALL_TABLES
+    // 1. Get table list from ALL_TABLES
     const tablesResult = await client.execute(
       `SELECT 
          TABLE_NAME as table_name,
-         NUM_ROWS as row_count
+         NUM_ROWS as row_count,
+         'TABLE' as table_type
        FROM ALL_TABLES 
        WHERE OWNER = :schema`,
       { schema: normalizedSchema },
@@ -282,7 +289,43 @@ export class MetadataService {
       schemaName: normalizedSchema,
       tableName: row.TABLE_NAME,
       rowCount: row.ROW_COUNT,
+      tableType: 'TABLE' as const,
     }));
+
+    // 2. Get view list from ALL_VIEWS (including view SQL definition)
+    this.logger.log(`Fetching views for schema: ${normalizedSchema}`);
+    try {
+      const viewsResult = await client.execute(
+        `SELECT 
+           VIEW_NAME,
+           TEXT as VIEW_DEFINITION
+         FROM ALL_VIEWS 
+         WHERE OWNER = :schema`,
+        { schema: normalizedSchema },
+        { outFormat: oracledb.OUT_FORMAT_OBJECT }
+      );
+
+      const views: TableInfo[] = (viewsResult.rows || []).map((row: any) => {
+        // Oracle stores TEXT as CLOB, need to handle it properly
+        let viewDef = row.VIEW_DEFINITION;
+        if (viewDef && typeof viewDef === 'object' && viewDef.getData) {
+          // Handle CLOB object
+          viewDef = viewDef.getData ? viewDef.getData() : String(viewDef);
+        }
+        return {
+          schemaName: normalizedSchema,
+          tableName: row.VIEW_NAME,
+          tableType: 'VIEW' as const,
+          viewDefinition: viewDef ? String(viewDef).substring(0, 4000) : undefined,
+        };
+      });
+
+      this.logger.log(`Found ${views.length} views in schema ${normalizedSchema}`);
+      tables.push(...views);
+    } catch (viewError) {
+      this.logger.warn(`Failed to fetch views for schema ${normalizedSchema}: ${viewError.message}`);
+      // Continue even if view fetch fails
+    }
 
     // Get column info
     const columnsResult = await client.execute(
@@ -496,10 +539,22 @@ export class MetadataService {
     for (const table of tables) {
       if (table.importanceLevel === 'LOW') continue; // Skip low importance tables in context to save tokens? Or just use it for ranking. For now include all not excluded.
 
-      context += `\nTable: ${table.schemaName}.${table.tableName}`;
+      // Display table/view type
+      const objectType = table.tableType === 'VIEW' ? 'View' : 
+                         table.tableType === 'MATERIALIZED_VIEW' ? 'Materialized View' : 'Table';
+      context += `\n${objectType}: ${table.schemaName}.${table.tableName}`;
+      if (table.tableType === 'VIEW') context += ' [VIEW]';
       if (table.description) context += ` -- ${table.description}`;
       if (table.tags && table.tags.length > 0) context += ` (Tags: ${table.tags.join(', ')})`;
       context += '\n';
+
+      // Include view definition for better SQL generation context
+      if (table.tableType === 'VIEW' && table.viewDefinition) {
+        const truncatedDef = table.viewDefinition.length > 500 
+          ? table.viewDefinition.substring(0, 500) + '...' 
+          : table.viewDefinition;
+        context += `  View Definition: ${truncatedDef}\n`;
+      }
 
       // Relations
       const relations = [
@@ -898,8 +953,20 @@ Include ALL ${table.columns.length} columns in your response.`;
         // ===========================================
         try {
           // 1. Construct rich text representation
-          let embeddingText = `Table: ${table.tableName}`;
+          // Include table type (VIEW/TABLE) for better context
+          const objectType = table.tableType === 'VIEW' ? 'View' : 
+                             table.tableType === 'MATERIALIZED_VIEW' ? 'Materialized View' : 'Table';
+          let embeddingText = `${objectType}: ${table.tableName}`;
+          
           if (result.tableDescription) embeddingText += `\nDescription: ${result.tableDescription}`;
+          
+          // For VIEWs, include the SQL definition for better RAG matching
+          if (table.tableType === 'VIEW' && table.viewDefinition) {
+            const truncatedDef = table.viewDefinition.length > 1000 
+              ? table.viewDefinition.substring(0, 1000) + '...' 
+              : table.viewDefinition;
+            embeddingText += `\nView SQL: ${truncatedDef}`;
+          }
           
           const colInfo = (result.columns || []).map((c: any) => {
              return `- ${c.columnName} (${c.semanticName || ''}): ${c.description || ''}`;

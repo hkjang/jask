@@ -121,6 +121,10 @@ model TableMetadata {
   reviewNotes       String?        @db.Text
   lastAiUpdate      DateTime?
 
+  // View Metadata (Oracle, MySQL, PostgreSQL views)
+  tableType         String         @default("TABLE")  // TABLE, VIEW, MATERIALIZED_VIEW
+  viewDefinition    String?        @db.Text           // 뷰 SQL 정의
+
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
