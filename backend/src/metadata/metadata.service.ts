@@ -66,7 +66,13 @@ export class MetadataService {
     }
 
     // 테이블 저장
+    this.logger.debug(`Syncing ${tables.length} tables with column keys: ${Array.from(allColumns.keys()).join(', ')}`);
+    
     for (const table of tables) {
+      const columnKey = `${table.schemaName}.${table.tableName}`;
+      const columnsForTable = allColumns.get(columnKey) || [];
+      this.logger.debug(`Table ${table.tableName}: schemaName=${table.schemaName}, key=${columnKey}, columns=${columnsForTable.length}`);
+      
       const savedTable = await this.prisma.tableMetadata.upsert({
         where: {
           dataSourceId_schemaName_tableName: {
@@ -258,20 +264,22 @@ export class MetadataService {
   }
 
   private async syncOracleMetadata(client: oracledb.Connection, schema: string) {
+    // Oracle: Normalize schema to uppercase (Oracle is case-insensitive for identifiers)
+    const normalizedSchema = schema?.toUpperCase() || '';
+    
     // Oracle: Get table list from USER_TABLES or ALL_TABLES
     const tablesResult = await client.execute(
       `SELECT 
-         :schema as schema_name,
          TABLE_NAME as table_name,
          NUM_ROWS as row_count
        FROM ALL_TABLES 
        WHERE OWNER = :schema`,
-      { schema: schema?.toUpperCase() || '' },
+      { schema: normalizedSchema },
       { outFormat: oracledb.OUT_FORMAT_OBJECT }
     );
 
     const tables: TableInfo[] = (tablesResult.rows || []).map((row: any) => ({
-      schemaName: row.SCHEMA_NAME || schema,
+      schemaName: normalizedSchema,
       tableName: row.TABLE_NAME,
       rowCount: row.ROW_COUNT,
     }));
@@ -304,13 +312,13 @@ export class MetadataService {
        ) fk ON c.TABLE_NAME = fk.TABLE_NAME AND c.COLUMN_NAME = fk.COLUMN_NAME
        WHERE c.OWNER = :schema
        ORDER BY c.TABLE_NAME, c.COLUMN_ID`,
-      { schema: schema?.toUpperCase() || '' },
+      { schema: normalizedSchema },
       { outFormat: oracledb.OUT_FORMAT_OBJECT }
     );
 
     const columns = new Map<string, ColumnInfo[]>();
     for (const row of (columnsResult.rows || []) as any[]) {
-      const key = `${schema}.${row.TABLE_NAME}`;
+      const key = `${normalizedSchema}.${row.TABLE_NAME}`;
       if (!columns.has(key)) {
         columns.set(key, []);
       }
@@ -749,27 +757,50 @@ export class MetadataService {
     const totalTables = tables.length;
 
     for (const table of tables) {
+      // Skip tables with no columns
+      if (!table.columns || table.columns.length === 0) {
+        this.logger.warn(`Skipping table ${table.tableName}: no columns found`);
+        continue;
+      }
+
+      // Build detailed column info including data types
+      const columnDetails = table.columns.map(c => {
+        let info = `${c.columnName} (${c.dataType}`;
+        if (c.isNullable === false) info += ', NOT NULL';
+        if (c.isPrimaryKey) info += ', PK';
+        if (c.isForeignKey) info += `, FK -> ${c.referencedTable}.${c.referencedColumn}`;
+        if (c.description) info += `, desc: ${c.description}`;
+        info += ')';
+        return info;
+      }).join('\n  - ');
+
       // Logic to translate table and columns
-      const prompt = `
-You are a database expert. I will provide a table schema. 
-Please translate the table name and column names into Korean semantic names (business terms) and provide a brief description for each.
-If the column already has a description, you can refine it in Korean.
+      const prompt = `You are a database metadata expert. Analyze the following table schema and provide Korean semantic names (business terms) and descriptions.
 
-Table: ${table.tableName}
-Columns: ${table.columns.map(c => c.columnName + (c.isPrimaryKey ? ' (PK)' : '') + (c.isForeignKey ? ' (FK)' : '')).join(', ')}
+Table Name: ${table.tableName}
+Schema: ${table.schemaName}
+Columns:
+  - ${columnDetails}
 
-Return the result in the following JSON format ONLY:
+Your task:
+1. Provide a Korean description for the table explaining what it stores
+2. For each column, provide:
+   - semanticName: A Korean business term (e.g., "사용자 ID", "생성일시", "주문번호")
+   - description: A brief Korean description of what the column contains
+
+IMPORTANT: You MUST respond with ONLY a valid JSON object in this exact format, no other text:
 {
-  "tableDescription": "Short Korean description of what this table stores",
+  "tableDescription": "테이블 설명",
   "columns": [
     {
-      "columnName": "original_column_name",
-      "semanticName": "Korean logical name (e.g., 사용자 ID, 생성일시)",
-      "description": "Brief description in Korean"
+      "columnName": "${table.columns[0]?.columnName || 'column_name'}",
+      "semanticName": "한글 의미명",
+      "description": "한글 설명"
     }
   ]
 }
-`;
+
+Include ALL ${table.columns.length} columns in your response.`;
 
       try {
         const response = await this.llmService.generate({
