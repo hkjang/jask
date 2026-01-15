@@ -38,6 +38,7 @@ import { ShareDialog } from './_components/share-dialog';
 import { ThreadSidebar } from '@/components/chat/ThreadSidebar';
 import { CommentSection } from './_components/comment-section';
 import { FeedbackDialog } from './_components/feedback-dialog';
+import { TableSchemaViewer } from './_components/table-schema-viewer';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -244,6 +245,9 @@ function QueryPageContent() {
   // Feedback State
   const [feedbackQueryId, setFeedbackQueryId] = useState<string | null>(null);
   const [isFeedbackDialogOpen, setIsFeedbackDialogOpen] = useState(false);
+
+  // Schema Viewer State
+  const [schemaViewerSql, setSchemaViewerSql] = useState<string | null>(null);
 
   // Destructive SQL Confirmation State
   const [pendingDestructiveExec, setPendingDestructiveExec] = useState<{
@@ -1029,8 +1033,18 @@ function QueryPageContent() {
                                     size="icon"
                                     className="h-6 w-6 text-zinc-400 hover:text-white"
                                     onClick={() => copySQL(message.sql!)}
+                                    title="SQL 복사"
                                   >
                                     <Copy className="h-3 w-3" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-6 w-6 text-zinc-400 hover:text-cyan-400"
+                                    onClick={() => setSchemaViewerSql(message.sql!)}
+                                    title="테이블 스키마 보기"
+                                  >
+                                    <Database className="h-3 w-3" />
                                   </Button>
                                   {message.queryId && (
                                     <Button
@@ -1678,6 +1692,14 @@ function QueryPageContent() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Table Schema Viewer Modal */}
+      <TableSchemaViewer
+        sql={schemaViewerSql || ''}
+        dataSourceId={selectedDataSource}
+        open={!!schemaViewerSql}
+        onOpenChange={(open) => !open && setSchemaViewerSql(null)}
+      />
     </MainLayout>
     </TooltipProvider>
   );
