@@ -85,6 +85,7 @@ import {
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import rehypeRaw from 'rehype-raw';
 import { useUserAction, ActionType } from '@/hooks/use-user-action';
 
 interface Message {
@@ -762,8 +763,25 @@ function QueryPageContent() {
 
               <div className={`max-w-[80%] min-w-0 overflow-hidden ${message.role === 'user' ? 'order-first' : ''}`}>
                 {message.role === 'user' ? (
-                  <div className="bg-primary text-primary-foreground rounded-2xl rounded-tr-sm px-4 py-2.5">
-                    <p>{message.content}</p>
+                  <div className="group relative">
+                    <div className="bg-primary text-primary-foreground rounded-2xl rounded-tr-sm px-4 py-2.5 pr-10">
+                      <p>{message.content}</p>
+                    </div>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity text-primary-foreground/70 hover:text-primary-foreground hover:bg-primary-foreground/20"
+                          onClick={() => setInput(message.content)}
+                        >
+                          <RotateCcw className="h-3.5 w-3.5" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="left">
+                        <p>다시 질문하기</p>
+                      </TooltipContent>
+                    </Tooltip>
                   </div>
                 ) : (
                   <div className="space-y-3">
@@ -793,6 +811,7 @@ function QueryPageContent() {
                         </div>
                         <ReactMarkdown
                           remarkPlugins={[remarkGfm]}
+                          rehypePlugins={[rehypeRaw]}
                           components={{
                             code: ({ node, className, children, ...props }: any) => (
                               <code className="relative rounded bg-background px-[0.3rem] py-[0.2rem] font-mono text-sm font-semibold" {...props}>{children}</code>
@@ -813,6 +832,7 @@ function QueryPageContent() {
                           <div className="bg-muted rounded-2xl rounded-tl-sm px-4 py-3 text-sm break-words overflow-hidden">
                             <ReactMarkdown
                               remarkPlugins={[remarkGfm]}
+                              rehypePlugins={[rehypeRaw]}
                               components={{
                                 table: ({ node, ...props }) => (
                                   <div className="overflow-x-auto my-2 border rounded-md bg-background">
@@ -832,16 +852,19 @@ function QueryPageContent() {
                                   <th className="h-10 px-3 text-left align-middle font-medium text-muted-foreground [&:has([role=checkbox])]:pr-0" {...props} />
                                 ),
                                 td: ({ node, ...props }) => (
-                                  <td className="p-3 align-middle [&:has([role=checkbox])]:pr-0" {...props} />
+                                  <td className="p-3 align-top [&:has([role=checkbox])]:pr-0 [&>ul]:my-0 [&>ul]:ml-4 [&>ol]:my-0 [&>ol]:ml-4" {...props} />
                                 ),
                                 p: ({ node, ...props }) => (
                                   <p className="whitespace-pre-wrap mb-2 last:mb-0" {...props} />
                                 ),
                                 ul: ({ node, ...props }) => (
-                                  <ul className="my-2 ml-6 list-disc [&>li]:mt-1" {...props} />
+                                  <ul className="my-2 ml-5 list-disc space-y-1" {...props} />
                                 ),
                                 ol: ({ node, ...props }) => (
-                                  <ol className="my-2 ml-6 list-decimal [&>li]:mt-1" {...props} />
+                                  <ol className="my-2 ml-5 list-decimal space-y-1" {...props} />
+                                ),
+                                li: ({ node, ...props }) => (
+                                  <li className="text-sm leading-relaxed" {...props} />
                                 ),
                                 code: ({ node, className, children, ...props }: any) => {
                                   return (
