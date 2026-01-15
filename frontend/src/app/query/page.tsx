@@ -252,6 +252,15 @@ function QueryPageContent() {
     operations: string[];
   } | null>(null);
 
+  // Partial Failure Recovery State
+  const [partialFailureInfo, setPartialFailureInfo] = useState<{
+    queryId: string;
+    originalSql: string;
+    batchResults: { index: number; sql: string; success: boolean; rowsAffected?: number; error?: string }[];
+    successStatements: string[];
+    failedStatements: { sql: string; error: string }[];
+  } | null>(null);
+
   // Query History
   const { data: historyData, isLoading: isHistoryLoading, refetch: refetchHistory } = useQuery({
     queryKey: ['queryHistory', selectedDataSource],
@@ -399,6 +408,34 @@ function QueryPageContent() {
       );
     },
     onSuccess: (data: any, variables) => {
+      // Check for partial failure in batch execution
+      if (data.result?.hasPartialFailure && data.result?.batchResults) {
+        const batchResults = data.result.batchResults;
+        const successStatements = batchResults
+          .filter((r: any) => r.success)
+          .map((r: any) => r.sql);
+        const failedStatements = batchResults
+          .filter((r: any) => !r.success)
+          .map((r: any) => ({ sql: r.sql, error: r.error || '알 수 없는 오류' }));
+        
+        setPartialFailureInfo({
+          queryId: variables.queryId,
+          originalSql: variables.sql,
+          batchResults,
+          successStatements,
+          failedStatements,
+        });
+        
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.queryId === variables.queryId
+              ? { ...msg, isExecuting: false, error: data.result.firstError || '일부 문장 실행 실패' }
+              : msg
+          )
+        );
+        return;
+      }
+      
       setMessages((prev) =>
         prev.map((msg) => {
           if (msg.queryId === variables.queryId) {
@@ -636,6 +673,38 @@ function QueryPageContent() {
       });
       setPendingDestructiveExec(null);
     }
+  };
+
+  // 부분 실패 시 성공 가능한 문장만 재실행
+  const executeSuccessfulStatementsOnly = async () => {
+    if (!partialFailureInfo) return;
+    
+    const successSql = partialFailureInfo.successStatements.join(';\n');
+    if (successSql.trim()) {
+      try {
+        // Re-execute only successful statements with skipOnError
+        const result = await api.post(`/nl2sql/execute/${partialFailureInfo.queryId}`, { 
+          sql: successSql,
+          skipOnError: true 
+        });
+        
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.queryId === partialFailureInfo.queryId
+              ? { ...msg, result: (result as any).result, error: undefined, isExecuting: false }
+              : msg
+          )
+        );
+        
+        toast({ 
+          title: '부분 실행 완료', 
+          description: `${partialFailureInfo.successStatements.length}개 문장이 성공적으로 실행되었습니다.` 
+        });
+      } catch (error: any) {
+        toast({ title: '실행 실패', description: error.message, variant: 'destructive' });
+      }
+    }
+    setPartialFailureInfo(null);
   };
 
   const selectedDS = dataSources.find((ds: any) => ds.id === selectedDataSource);
@@ -1544,6 +1613,67 @@ function QueryPageContent() {
               onClick={confirmDestructiveExecution}
             >
               실행 확인
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Partial Failure Recovery Dialog */}
+      <AlertDialog open={!!partialFailureInfo} onOpenChange={(open) => !open && setPartialFailureInfo(null)}>
+        <AlertDialogContent className="max-w-2xl">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-yellow-600 flex items-center gap-2">
+              ⚠️ 일부 SQL 문장 실행 실패
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-4">
+                <p>일부 SQL 문장이 성공하고 일부가 실패했습니다. 성공한 문장만 실행하시겠습니까?</p>
+                
+                {partialFailureInfo && (
+                  <div className="space-y-3 max-h-60 overflow-auto">
+                    {/* Failed Statements */}
+                    {partialFailureInfo.failedStatements.length > 0 && (
+                      <div className="space-y-2">
+                        <p className="text-sm font-medium text-destructive flex items-center gap-2">
+                          <XCircle className="h-4 w-4" />
+                          실패한 문장 ({partialFailureInfo.failedStatements.length}개)
+                        </p>
+                        {partialFailureInfo.failedStatements.map((item, idx) => (
+                          <div key={idx} className="bg-destructive/10 border border-destructive/30 p-2 rounded-md text-xs">
+                            <div className="font-mono text-destructive mb-1">{item.error}</div>
+                            <div className="font-mono text-muted-foreground truncate">{item.sql}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    
+                    {/* Success Statements */}
+                    {partialFailureInfo.successStatements.length > 0 && (
+                      <div className="space-y-2">
+                        <p className="text-sm font-medium text-green-600 flex items-center gap-2">
+                          <CheckCircle className="h-4 w-4" />
+                          실행 가능한 문장 ({partialFailureInfo.successStatements.length}개)
+                        </p>
+                        {partialFailureInfo.successStatements.map((sql, idx) => (
+                          <div key={idx} className="bg-green-500/10 border border-green-500/30 p-2 rounded-md">
+                            <div className="font-mono text-xs truncate">{sql}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>전체 취소</AlertDialogCancel>
+            <AlertDialogAction 
+              className="bg-green-600 text-white hover:bg-green-700"
+              onClick={executeSuccessfulStatementsOnly}
+              disabled={!partialFailureInfo?.successStatements.length}
+            >
+              성공 가능한 {partialFailureInfo?.successStatements.length || 0}개 문장만 실행
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

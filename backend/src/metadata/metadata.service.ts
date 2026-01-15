@@ -782,32 +782,60 @@ Return the result in the following JSON format ONLY:
         // Clean up LLM response - handle various formats
         let content = response.content;
         
+        // Log raw response for debugging
+        this.logger.debug(`Raw LLM response for ${table.tableName}: ${content.substring(0, 500)}...`);
+        
         // Remove qwen3 thinking blocks (if any)
         content = content.replace(/<think>[\s\S]*?<\/think>/gi, '');
         
-        // Remove markdown code blocks
-        content = content.replace(/```json\n?|```\n?/gi, '').trim();
+        // Remove markdown code blocks (various formats)
+        content = content.replace(/```json\s*/gi, '');
+        content = content.replace(/```\s*/gi, '');
+        content = content.trim();
         
-        // Find JSON object in the content
-        const start = content.indexOf('{');
-        const end = content.lastIndexOf('}');
+        // Try multiple approaches to extract JSON
+        let result: any = null;
         
-        if (start === -1 || end === -1 || start >= end) {
-          throw new Error('No valid JSON object found in LLM response');
+        // Approach 1: Direct parse
+        try {
+          result = JSON.parse(content);
+        } catch {
+          // Approach 2: Find JSON object boundaries
+          const start = content.indexOf('{');
+          const end = content.lastIndexOf('}');
+          
+          if (start !== -1 && end !== -1 && start < end) {
+            let jsonStr = content.substring(start, end + 1);
+            
+            // Fix control characters ONLY inside string values (between quotes)
+            jsonStr = jsonStr.replace(/"([^"\\]*(\\.[^"\\]*)*)"/g, (match) => {
+              return match
+                .replace(/\n/g, '\\n')
+                .replace(/\r/g, '\\r')
+                .replace(/\t/g, '\\t');
+            });
+            
+            try {
+              result = JSON.parse(jsonStr);
+            } catch (parseErr) {
+              // Approach 3: Try to fix common JSON issues
+              jsonStr = jsonStr
+                .replace(/,\s*}/g, '}')  // trailing comma
+                .replace(/,\s*]/g, ']')  // trailing comma in array
+                .replace(/'/g, '"');     // single quotes to double
+              
+              try {
+                result = JSON.parse(jsonStr);
+              } catch {
+                this.logger.warn(`JSON parse failed for ${table.tableName}, content preview: ${jsonStr.substring(0, 200)}`);
+                throw new Error('Failed to parse JSON from LLM response');
+              }
+            }
+          } else {
+            this.logger.warn(`No JSON object found in response for ${table.tableName}`);
+            throw new Error('No valid JSON object found in LLM response');
+          }
         }
-        
-        let jsonStr = content.substring(start, end + 1);
-        
-        // Fix control characters ONLY inside string values (between quotes)
-        // This regex finds strings and escapes control chars within them
-        jsonStr = jsonStr.replace(/"([^"\\]*(\\.[^"\\]*)*)"/g, (match) => {
-          return match
-            .replace(/\n/g, '\\n')
-            .replace(/\r/g, '\\r')
-            .replace(/\t/g, '\\t');
-        });
-        
-        const result = JSON.parse(jsonStr);
 
         // Update Table
         if (result.tableDescription) {

@@ -12,12 +12,24 @@ export interface ExecutionResult {
   fields: { name: string; type: string }[];
   executionTime: number;
   truncated: boolean;
+  // Batch execution results (for multi-statement DML)
+  batchResults?: BatchStatementResult[];
+  hasPartialFailure?: boolean;
+}
+
+export interface BatchStatementResult {
+  index: number;
+  sql: string;
+  success: boolean;
+  rowsAffected?: number;
+  error?: string;
 }
 
 export interface ExecutionOptions {
   mode: 'preview' | 'execute';
   maxRows?: number;
   timeout?: number;
+  skipOnError?: boolean; // Continue executing remaining statements if one fails
 }
 
 @Injectable()
@@ -94,6 +106,7 @@ export class ExecutionService {
           maxRows,
           timeout,
           startTime,
+          options,
         );
       }
 
@@ -201,6 +214,7 @@ export class ExecutionService {
     maxRows: number,
     timeout: number,
     startTime: number,
+    options?: ExecutionOptions,
   ): Promise<ExecutionResult> {
     const upperSql = sql.trim().toUpperCase();
     const isSelect = upperSql.startsWith('SELECT') || upperSql.startsWith('WITH');
@@ -218,42 +232,113 @@ export class ExecutionService {
       });
     } else if (isDDL || isDML) {
       // DDL/DML - handle multiple statements separated by semicolons
-      const statements = sql.split(';').map(s => s.trim()).filter(s => s.length > 0);
+      // Normalize line endings and split by semicolon
+      const normalizedSql = sql.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+      const statements = normalizedSql
+        .split(';')
+        .map(s => s.trim())
+        .filter(s => s.length > 0);
+      
+      this.logger.log(`[Oracle DDL/DML] Parsed ${statements.length} statement(s) from SQL`);
+      statements.forEach((stmt, idx) => {
+        this.logger.debug(`[Oracle] Statement ${idx + 1}: ${stmt.substring(0, 80)}...`);
+      });
+      
+      const batchResults: { index: number; sql: string; success: boolean; rowsAffected?: number; error?: string }[] = [];
       let totalRowsAffected = 0;
       let executedCount = 0;
+      let failedCount = 0;
       
-      // Check if transaction mode is enabled (only for DML, not DDL)
+      // Check if we should skip errors and continue (for partial execution recovery)
+      const skipOnError = options?.skipOnError ?? false;
+      
+      // Check if transaction mode is enabled (only for DML, not DDL, and not when skipping errors)
       // DDL auto-commits in Oracle, so transaction mode only applies to DML
-      const useTransaction = isDML && statements.length > 1;
+      const useTransaction = isDML && statements.length > 1 && !skipOnError;
       
-      try {
-        for (const stmt of statements) {
+      for (let i = 0; i < statements.length; i++) {
+        const stmt = statements[i];
+        try {
           const stmtResult = await client.execute(stmt, [], {
-            autoCommit: !useTransaction, // Don't auto-commit if in transaction mode
+            autoCommit: !useTransaction && !skipOnError, // Auto-commit each statement when skipping errors
           });
-          totalRowsAffected += stmtResult.rowsAffected || 0;
+          const affected = stmtResult.rowsAffected || 0;
+          totalRowsAffected += affected;
           executedCount++;
+          batchResults.push({
+            index: i,
+            sql: stmt,
+            success: true,
+            rowsAffected: affected,
+          });
+        } catch (error: any) {
+          failedCount++;
+          const errorMsg = this.formatError(error);
+          batchResults.push({
+            index: i,
+            sql: stmt,
+            success: false,
+            error: errorMsg,
+          });
+          
+          if (skipOnError) {
+            // Continue to next statement
+            this.logger.warn(`[Oracle] Statement ${i + 1} failed: ${errorMsg}, continuing...`);
+          } else {
+            // Rollback and check if partial failure
+            if (useTransaction && executedCount > 0) {
+              await client.rollback();
+              this.logger.warn(`Transaction rolled back: ${executedCount}/${statements.length} statements executed before failure`);
+            }
+            
+            // For multi-statement batch, don't throw - return partial results for frontend handling
+            const isMultiStatement = statements.length > 1;
+            if (isMultiStatement) {
+              // Mark remaining statements as not executed
+              for (let j = i + 1; j < statements.length; j++) {
+                batchResults.push({
+                  index: j,
+                  sql: statements[j],
+                  success: false,
+                  error: '이전 문장 실패로 실행되지 않음',
+                });
+              }
+              
+              // Return partial results so frontend can offer recovery
+              result = {
+                rowsAffected: totalRowsAffected,
+                statementsExecuted: executedCount,
+                batchResults,
+                hasPartialFailure: true,
+                failedAt: i,
+                firstError: errorMsg,
+                successCount: executedCount,
+                failedCount: statements.length - executedCount,
+              };
+              // Don't throw - let the result flow through to frontend
+              break;
+            }
+            throw error;
+          }
         }
-        
-        // Commit transaction if all statements succeeded
-        if (useTransaction) {
-          await client.commit();
-          this.logger.log(`Transaction committed: ${executedCount} statements`);
-        }
-      } catch (error: any) {
-        // Rollback on failure if in transaction mode
-        if (useTransaction && executedCount > 0) {
-          await client.rollback();
-          this.logger.warn(`Transaction rolled back: ${executedCount}/${statements.length} statements executed before failure`);
-          throw new Error(`${error.message} (롤백됨: ${executedCount}개 문장이 롤백되었습니다)`);
-        }
-        throw error;
       }
+      
+      // Commit transaction if all statements succeeded
+      if (useTransaction && failedCount === 0) {
+        await client.commit();
+        this.logger.log(`Transaction committed: ${executedCount} statements`);
+      }
+      
+      const hasPartialFailure = failedCount > 0 && executedCount > 0;
       
       result = { 
         rowsAffected: totalRowsAffected,
         statementsExecuted: statements.length,
         transactionUsed: useTransaction,
+        batchResults,
+        hasPartialFailure,
+        successCount: executedCount,
+        failedCount,
       };
     } else {
       // Other statements
@@ -315,15 +400,28 @@ export class ExecutionService {
       // DDL/DML result
       const stmtCount = result.statementsExecuted || 1;
       const rowsAffected = result.rowsAffected || 0;
+      const hasPartialFailure = result.hasPartialFailure || false;
+      const batchResults = result.batchResults;
+      
+      let message = '';
+      if (hasPartialFailure) {
+        const successCount = result.successCount || 0;
+        const failedCount = result.failedCount || 0;
+        message = `${successCount}개 성공, ${failedCount}개 실패 (총 ${stmtCount}개 문장)`;
+      } else if (isDDL) {
+        message = `DDL 명령이 성공적으로 실행되었습니다. (${stmtCount}개 문장)`;
+      } else {
+        message = `${rowsAffected}개의 행이 영향받았습니다. (${stmtCount}개 문장 실행)`;
+      }
       
       return {
-        rows: isDDL 
-          ? [{ message: `DDL 명령이 성공적으로 실행되었습니다. (${stmtCount}개 문장)` }]
-          : [{ message: `${rowsAffected}개의 행이 영향받았습니다. (${stmtCount}개 문장 실행)` }],
+        rows: [{ message }],
         rowCount: rowsAffected || (isDDL ? stmtCount : 0),
         fields: [{ name: 'message', type: 'varchar2' }],
         executionTime,
         truncated: false,
+        batchResults,
+        hasPartialFailure,
       };
     }
   }
