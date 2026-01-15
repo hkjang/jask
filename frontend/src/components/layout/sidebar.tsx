@@ -41,6 +41,7 @@ const adminItems = [
   { href: '/admin/sample-queries', icon: FileText, label: '샘플 쿼리' },
   { href: '/admin/policies', icon: ShieldAlert, label: '정책 관리' },
   { href: '/admin/evolution', icon: Sparkles, label: 'AI 진화' },
+  { href: '/admin/audit', icon: ShieldAlert, label: '감사 로그' },
 ];
 
 export function Sidebar({ className }: SidebarProps) {

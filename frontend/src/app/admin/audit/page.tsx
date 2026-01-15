@@ -104,8 +104,8 @@ export default function AuditLogsPage() {
   
   // Filters
   const [search, setSearch] = useState('');
-  const [actionType, setActionType] = useState<string>('');
-  const [severity, setSeverity] = useState<string>('');
+  const [actionType, setActionType] = useState<string>('all');
+  const [severity, setSeverity] = useState<string>('all');
   const [dateRange, setDateRange] = useState<'1d' | '7d' | '30d' | 'all'>('7d');
 
   // Calculate date range
@@ -140,8 +140,8 @@ export default function AuditLogsPage() {
         limit: '20',
       });
       if (search) params.append('search', search);
-      if (actionType) params.append('actionType', actionType);
-      if (severity) params.append('severity', severity);
+      if (actionType && actionType !== 'all') params.append('actionType', actionType);
+      if (severity && severity !== 'all') params.append('severity', severity);
       if (startDate) params.append('startDate', startDate);
       if (endDate) params.append('endDate', endDate);
       
@@ -172,8 +172,8 @@ export default function AuditLogsPage() {
   const handleExport = async () => {
     try {
       const params = new URLSearchParams();
-      if (actionType) params.append('actionType', actionType);
-      if (severity) params.append('severity', severity);
+      if (actionType && actionType !== 'all') params.append('actionType', actionType);
+      if (severity && severity !== 'all') params.append('severity', severity);
       if (startDate) params.append('startDate', startDate);
       if (endDate) params.append('endDate', endDate);
       if (search) params.append('search', search);
@@ -383,7 +383,7 @@ export default function AuditLogsPage() {
                   <SelectValue placeholder="작업 유형" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">전체</SelectItem>
+                  <SelectItem value="all">전체</SelectItem>
                   {actionTypes.map((type: string) => (
                     <SelectItem key={type} value={type}>
                       {ACTION_TYPE_LABELS[type] || type}
@@ -397,7 +397,7 @@ export default function AuditLogsPage() {
                   <SelectValue placeholder="심각도" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">전체</SelectItem>
+                  <SelectItem value="all">전체</SelectItem>
                   <SelectItem value="INFO">정보</SelectItem>
                   <SelectItem value="WARNING">경고</SelectItem>
                   <SelectItem value="DANGER">위험</SelectItem>
