@@ -190,8 +190,25 @@ ${schemaContext}`;
         }
       }
 
+      // Debug: Log raw LLM output
+      this.logger.debug(`[NL2SQL] Raw LLM output (first 500 chars): ${generatedSql.substring(0, 500)}`);
+
+      // Remove reasoning/think tags from reasoning models (e.g., qwen3, deepseek-r1)
+      // Pattern 1: <think>...</think> tags
+      generatedSql = generatedSql.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+      // Pattern 2: <reasoning>...</reasoning> tags  
+      generatedSql = generatedSql.replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, '').trim();
+      // Pattern 3: Text before SQL keywords (remove everything before SELECT/WITH/CREATE/INSERT/UPDATE/DELETE)
+      const sqlKeywordMatch = generatedSql.match(/(SELECT|WITH|CREATE|INSERT|UPDATE|DELETE|ALTER|DROP)\s/i);
+      if (sqlKeywordMatch && sqlKeywordMatch.index && sqlKeywordMatch.index > 0) {
+        generatedSql = generatedSql.substring(sqlKeywordMatch.index).trim();
+        this.logger.log(`[NL2SQL] Trimmed preamble text, SQL starts with: ${generatedSql.substring(0, 50)}...`);
+      }
+      
       // Remove markdown code block formatting
       generatedSql = generatedSql.replace(/```sql\n?([\s\S]*?)\n?```/i, '$1').replace(/```\n?([\s\S]*?)\n?```/, '$1').trim();
+
+      this.logger.log(`[NL2SQL] Cleaned SQL (first 200 chars): ${generatedSql.substring(0, 200)}`);
       
       // Check if this is a DDL statement
       const upperSqlCheck = generatedSql.toUpperCase().trim();
@@ -202,14 +219,31 @@ ${schemaContext}`;
       if (isDDLStatement && allowDDL) {
         // Preserve DDL statements as-is when DDL is allowed
         this.logger.log(`[DDL] Preserving DDL statement: ${generatedSql.substring(0, 100)}...`);
-        generatedSql = generatedSql.replace(/;$/, '').trim();
+        // Extract only the first DDL statement (until semicolon)
+        const ddlMatch = generatedSql.match(/^(CREATE|ALTER|DROP)[^;]+/i);
+        if (ddlMatch) generatedSql = ddlMatch[0].trim();
       } else if (!isDDLStatement) {
-        // Extract SELECT statement for non-DDL queries
-        const selectMatch = generatedSql.match(/SELECT[\s\S]+?(?:;|$)/i);
-        if (selectMatch) generatedSql = selectMatch[0].replace(/;$/, '').trim();
+        // Extract ONLY the first SELECT/WITH statement (stop at first semicolon or newline after statement)
+        // More restrictive: capture from SELECT/WITH until semicolon, then stop
+        const selectMatch = generatedSql.match(/(SELECT|WITH)\s+[\s\S]*?;/i);
+        if (selectMatch) {
+          generatedSql = selectMatch[0].replace(/;$/, '').trim();
+        } else {
+          // No semicolon found - try to extract until end of SQL-like content
+          const noSemiMatch = generatedSql.match(/(SELECT|WITH)\s+[^\n]+/i);
+          if (noSemiMatch) generatedSql = noSemiMatch[0].trim();
+        }
       } else {
         // DDL attempted but not allowed - will be caught by validation
         this.logger.warn(`[DDL] DDL statement generated but DDL is not allowed`);
+      }
+      
+      this.logger.log(`[NL2SQL] Final extracted SQL: ${generatedSql.substring(0, 150)}`);
+
+      // PostgreSQL: Auto-wrap identifiers with double quotes if not already quoted
+      if (dbType.toLowerCase().includes('postgres')) {
+        generatedSql = this.wrapPostgresIdentifiers(generatedSql, schemaContext);
+        this.logger.log(`[PostgreSQL] Applied identifier quoting: ${generatedSql.substring(0, 100)}...`);
       }
 
       // 4. SQL 검증 & 정책 검사 & 리스크 분석
@@ -818,5 +852,43 @@ ${schemaContext}`;
       }
       
       return { allowed: true };
+  }
+
+  /**
+   * PostgreSQL용 식별자 래핑 - 테이블/컬럼 이름에 자동으로 따옴표 추가
+   */
+  private wrapPostgresIdentifiers(sql: string, schemaContext: string): string {
+    // 스키마에서 테이블 이름 추출
+    const tableMatches = schemaContext.match(/Table:\s*(\w+)/gi) || [];
+    const tables = tableMatches.map(m => m.replace(/Table:\s*/i, '').trim());
+    
+    // 스키마에서 컬럼 이름 추출 (- columnName: type 형식)
+    const columnMatches = schemaContext.match(/- (\w+):/g) || [];
+    const columns = columnMatches.map(m => m.replace(/- /, '').replace(/:/, '').trim());
+    
+    // 모든 식별자 수집 (중복 제거)
+    const identifiers = [...new Set([...tables, ...columns])];
+    
+    if (identifiers.length === 0) {
+      return sql;
+    }
+    
+    let wrappedSql = sql;
+    
+    // 각 식별자를 따옴표로 래핑 (이미 따옴표로 감싸진 경우 제외)
+    for (const identifier of identifiers) {
+      if (!identifier || identifier.length < 2) continue;
+      
+      // 이미 따옴표로 감싸져 있지 않은 식별자만 래핑
+      // 패턴: 따옴표 없이 나타나는 식별자 (단어 경계 사용)
+      const regex = new RegExp(
+        `(?<!")\\b${identifier}\\b(?!")`,
+        'g'
+      );
+      
+      wrappedSql = wrappedSql.replace(regex, `"${identifier}"`);
+    }
+    
+    return wrappedSql;
   }
 }

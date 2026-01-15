@@ -222,13 +222,7 @@ function QueryPageContent() {
   const pathname = usePathname();
 
   const [input, setInput] = useState('');
-  const [selectedDataSource, setSelectedDataSource] = useState<string>(() => {
-    // Initialize from localStorage if available
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('jask_selectedDataSource') || '';
-    }
-    return '';
-  });
+  const [selectedDataSource, setSelectedDataSource] = useState<string>('');
   const [isDataSourceOpen, setIsDataSourceOpen] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [historySearch, setHistorySearch] = useState('');
@@ -306,16 +300,26 @@ function QueryPageContent() {
   // Initialize or validate selected data source when dataSources change
   useEffect(() => {
     if (dataSources.length > 0) {
-      // Check if current selection is still valid
-      const isValidSelection = selectedDataSource && 
+      // First, try to load from localStorage on mount
+      const storedSelection = localStorage.getItem('jask_selectedDataSource');
+      
+      // Check if stored selection is valid
+      const isStoredValid = storedSelection && 
+        dataSources.some((ds: any) => ds.id === storedSelection);
+      
+      // Check if current selection is valid
+      const isCurrentValid = selectedDataSource && 
         dataSources.some((ds: any) => ds.id === selectedDataSource);
       
-      if (!isValidSelection) {
+      if (isStoredValid && !selectedDataSource) {
+        // Use stored selection if current is empty
+        setSelectedDataSource(storedSelection);
+      } else if (!isCurrentValid) {
         // Current selection is invalid, set to first available
         setSelectedDataSource(dataSources[0].id);
       }
     }
-  }, [dataSources, selectedDataSource]);
+  }, [dataSources]);
 
   /* Ref for skipping load on create */
   const skipNextLoadRef = useRef(false);
