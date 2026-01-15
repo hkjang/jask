@@ -85,7 +85,7 @@ async function main() {
     create: {
       id: 'demo-jask-db',
       name: 'Jask Demo DB',
-      type: 'PostgreSQL',
+      type: 'Postgresql',
       host: 'localhost',
       port: 5432,
       database: 'jask',
@@ -95,6 +95,25 @@ async function main() {
     },
   });
   console.log('✅ Demo DataSource created:', demoDataSource.name);
+
+  // Oracle XE 데이터소스
+  const oracleDataSource = await prisma.dataSource.upsert({
+    where: { id: 'oracle-xe-db' },
+    update: {},
+    create: {
+      id: 'oracle-xe-db',
+      name: 'Oracle XE',
+      type: 'Oracle',
+      host: 'localhost',
+      port: 1521,
+      schema: 'XE',
+      database: 'XE',
+      username: 'xe',
+      password: 'xe',
+      isActive: true,
+    },
+  });
+  console.log('✅ Oracle XE DataSource created:', oracleDataSource.name);
 
   // 6. 데모 데이터소스 테이블 메타데이터 (Prisma 스키마 기반)
   const tables = [

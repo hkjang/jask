@@ -1171,6 +1171,32 @@ export default function DataSourcesPage() {
                     />
                   </div>
                   <div className="space-y-2">
+                    <Label>데이터베이스 타입</Label>
+                    <Select 
+                      value={editForm.type.toLowerCase()} 
+                      onValueChange={(val) => {
+                        const config = DB_CONFIG[val as keyof typeof DB_CONFIG];
+                        setEditForm({ 
+                          ...editForm, 
+                          type: val,
+                          port: config?.defaultPort || editForm.port,
+                          schema: config?.defaultSchema || editForm.schema,
+                        });
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {Object.entries(DB_CONFIG).map(([key, { label, icon }]) => (
+                          <SelectItem key={key} value={key}>
+                            <span className="flex items-center gap-2">{icon} {label}</span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
                     <Label>환경</Label>
                     <Select value={editForm.environment} onValueChange={(val) => setEditForm({ ...editForm, environment: val })}>
                       <SelectTrigger>

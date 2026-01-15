@@ -50,6 +50,14 @@ class ApiClient {
     });
 
     if (!response.ok) {
+      // 401 Unauthorized 응답 시 토큰 만료로 간주하고 로그인 페이지로 이동
+      if (response.status === 401) {
+        this.clearToken();
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('user');
+          window.location.href = '/login';
+        }
+      }
       const error = await response.json().catch(() => ({}));
       throw new Error(error.message || `API Error: ${response.status}`);
     }

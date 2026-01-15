@@ -17,11 +17,11 @@ export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
-  // 이미 로그인된 경우 메인 페이지로 이동
+  // 이미 로그인된 경우 질문 페이지로 이동
   useEffect(() => {
     const token = api.getToken();
     if (token) {
-      router.push('/');
+      router.push('/query');
     }
   }, [router]);
 
