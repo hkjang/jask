@@ -185,9 +185,27 @@ ${schemaContext}`;
         }
       }
 
+      // Remove markdown code block formatting
       generatedSql = generatedSql.replace(/```sql\n?([\s\S]*?)\n?```/i, '$1').replace(/```\n?([\s\S]*?)\n?```/, '$1').trim();
-      const selectMatch = generatedSql.match(/SELECT[\s\S]+?(?:;|$)/i);
-      if (selectMatch) generatedSql = selectMatch[0].replace(/;$/, '').trim();
+      
+      // Check if this is a DDL statement
+      const upperSqlCheck = generatedSql.toUpperCase().trim();
+      const isDDLStatement = upperSqlCheck.startsWith('CREATE') || 
+                             upperSqlCheck.startsWith('ALTER') || 
+                             upperSqlCheck.startsWith('DROP');
+      
+      if (isDDLStatement && allowDDL) {
+        // Preserve DDL statements as-is when DDL is allowed
+        this.logger.log(`[DDL] Preserving DDL statement: ${generatedSql.substring(0, 100)}...`);
+        generatedSql = generatedSql.replace(/;$/, '').trim();
+      } else if (!isDDLStatement) {
+        // Extract SELECT statement for non-DDL queries
+        const selectMatch = generatedSql.match(/SELECT[\s\S]+?(?:;|$)/i);
+        if (selectMatch) generatedSql = selectMatch[0].replace(/;$/, '').trim();
+      } else {
+        // DDL attempted but not allowed - will be caught by validation
+        this.logger.warn(`[DDL] DDL statement generated but DDL is not allowed`);
+      }
 
       // 4. SQL 검증 & 정책 검사 & 리스크 분석
       yield { type: 'step_start', step: 'validation', message: 'SQL 검증 및 분석 중...' };

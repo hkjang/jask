@@ -596,7 +596,67 @@ export class MetadataService {
       const embedding = await this.llmService.generateEmbedding(question);
       const vectorStr = `[${embedding.join(',')}]`;
 
-      // 2. Perform Vector Search
+      // 2. Boost View Tables: Find views that may be relevant to the question
+      const questionLower = question.toLowerCase();
+      const viewTables = await this.prisma.tableMetadata.findMany({
+        where: { 
+          dataSourceId, 
+          tableType: 'VIEW',
+          isExcluded: false 
+        },
+        include: { 
+          columns: {
+            include: { codeValueList: { where: { isActive: true } } }
+          }
+        }
+      });
+
+      // Find views that match by name, description, or column names
+      const matchedViews = viewTables.filter(view => {
+        const viewNameLower = view.tableName.toLowerCase();
+        const descLower = (view.description || '').toLowerCase();
+        const columnNames = view.columns.map(c => c.columnName.toLowerCase()).join(' ');
+        
+        // Check if question references the view
+        return questionLower.includes(viewNameLower) || 
+               viewNameLower.includes(questionLower.split(' ')[0]) ||
+               descLower.split(' ').some(word => word.length > 3 && questionLower.includes(word)) ||
+               view.columns.some(c => c.semanticName && questionLower.includes(c.semanticName.toLowerCase()));
+      });
+
+      // 3. Build View Context (prioritized)
+      let viewContext = '';
+      if (matchedViews.length > 0) {
+        this.logger.log(`[View Boost] Found ${matchedViews.length} relevant views for question: "${question.substring(0, 50)}..."`);
+        viewContext = '=== 추천 뷰 테이블 (질문과 유사) ===\n\n';
+        
+        for (const view of matchedViews) {
+          viewContext += `View: ${view.schemaName}.${view.tableName} [VIEW]`;
+          if (view.description) viewContext += ` -- ${view.description}`;
+          viewContext += '\n';
+          
+          // Include view definition for better SQL generation
+          if (view.viewDefinition) {
+            const truncatedDef = view.viewDefinition.length > 500 
+              ? view.viewDefinition.substring(0, 500) + '...' 
+              : view.viewDefinition;
+            viewContext += `  View Definition: ${truncatedDef}\n`;
+          }
+          
+          viewContext += 'Columns:\n';
+          for (const col of view.columns) {
+            viewContext += `  - ${col.columnName}`;
+            if (col.semanticName) viewContext += ` ("${col.semanticName}")`;
+            viewContext += ` (${col.dataType})`;
+            if (col.description) viewContext += ` -- ${col.description}`;
+            viewContext += '\n';
+          }
+          viewContext += '\n';
+        }
+        viewContext += '=== 기타 관련 스키마 ===\n\n';
+      }
+
+      // 4. Perform Vector Search for remaining tables
       const results = await this.prisma.$queryRaw<any[]>`
         SELECT t."tableName", s."content", 
                (s."embedding" <=> ${vectorStr}::vector) as distance
@@ -608,20 +668,27 @@ export class MetadataService {
       `;
 
       if (!results || results.length === 0) {
+        if (viewContext) {
+          // Return only view context if no vector results
+          return viewContext;
+        }
         this.logger.warn(`No vector search results found for DataSource ${dataSourceId}. Falling back to full schema.`);
         return this.getSchemaContext(dataSourceId);
       }
 
-      // 3. Construct Context from results
-      let context = 'Selected Schema (based on relevance):\n\n';
-      for (const row of results) {
-        context += `${row.content}\n\n`;
+      // 5. Construct Context from results (with view context prepended)
+      let context = viewContext;
+      if (!viewContext) {
+        context = 'Selected Schema (based on relevance):\n\n';
       }
       
-      // Optional: Add logic to fetch Tables that were NOT embedded? 
-      // Or assume if user wants scalable, they must have translated/embedded.
-      // For safety, if context is too short, maybe fallback? 
-      // Current logic: If 0 results, fallback. If some results, use them.
+      for (const row of results) {
+        // Skip if this table was already included as a matched view
+        const isAlreadyIncluded = matchedViews.some(v => v.tableName === row.tableName);
+        if (!isAlreadyIncluded) {
+          context += `${row.content}\n\n`;
+        }
+      }
       
       return context;
 
