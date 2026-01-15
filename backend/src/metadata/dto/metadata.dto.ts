@@ -73,6 +73,11 @@ export class UpdateColumnMetadataDto {
   @IsEnum(SensitivityLevel)
   @IsOptional()
   sensitivityLevel?: SensitivityLevel;
+
+  @ApiProperty({ example: false, description: 'Whether to exclude this column from AI usage' })
+  @IsBoolean()
+  @IsOptional()
+  isExcluded?: boolean;
 }
 
 export class CreateCodeValueDto {
@@ -127,4 +132,39 @@ export class UpdateCodeValuesDto {
   @ApiProperty({ description: 'Legacy code values mapping' })
   @IsObject()
   codeValues: Record<string, string>;
+}
+
+// ===========================================
+// Excel Import/Export DTOs
+// ===========================================
+
+export class MetadataExcelRowDto {
+  @ApiProperty({ example: 'users' })
+  @IsString()
+  tableName: string;
+
+  @ApiProperty({ example: 'user_id' })
+  @IsString()
+  columnName: string;
+
+  @ApiProperty({ example: '사용자 ID', required: false })
+  @IsString()
+  @IsOptional()
+  semanticName?: string;
+
+  @ApiProperty({ example: '사용자 고유 식별자', required: false })
+  @IsString()
+  @IsOptional()
+  description?: string;
+
+  @ApiProperty({ example: 'A=활성, I=비활성', required: false })
+  @IsString()
+  @IsOptional()
+  codeValues?: string;
+}
+
+export class ImportMetadataDto {
+  @ApiProperty({ type: [MetadataExcelRowDto] })
+  @IsArray()
+  rows: MetadataExcelRowDto[];
 }

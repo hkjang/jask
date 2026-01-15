@@ -10,7 +10,7 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { 
   Layout, Save, Info, Plus, Columns, Network, Tag, 
-  Trash2, SlidersHorizontal, AlertCircle, Table as TableIcon, Eye, Code
+  Trash2, SlidersHorizontal, AlertCircle, Table as TableIcon, Eye, EyeOff, Code
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { api } from "@/lib/api";
@@ -20,6 +20,7 @@ import { CodeValueManager } from "./code-value-manager";
 import { RelationshipManager } from "./relationship-manager";
 import { MetadataQualityScore } from "./metadata-quality-score";
 import { DataPreview } from "./data-preview";
+import { ExcelImportExport } from "./excel-import-export";
 
 interface MetadataBuilderProps {
   table: any;
@@ -117,7 +118,8 @@ export function MetadataBuilder({ table, onUpdate }: MetadataBuilderProps) {
                 semanticName: col.semanticName,
                 unit: col.unit,
                 isCode: col.isCode,
-                sensitivityLevel: col.sensitivityLevel
+                sensitivityLevel: col.sensitivityLevel,
+                isExcluded: col.isExcluded
             });
         });
         await Promise.all(promises);
@@ -126,6 +128,29 @@ export function MetadataBuilder({ table, onUpdate }: MetadataBuilderProps) {
     } catch (e) {
         console.error(e);
       toast({ title: "오류", description: "컬럼 저장 실패", variant: "destructive" });
+    }
+  };
+
+  const handleToggleColumnExcluded = async (col: any) => {
+    const newState = !col.isExcluded;
+    try {
+      await api.setColumnExcluded(col.id, newState);
+      setColumns(prev => prev.map(c => c.id === col.id ? { ...c, isExcluded: newState } : c));
+      toast({ title: newState ? "컬럼 제외됨" : "컬럼 포함됨", description: `${col.columnName} 컬럼이 ${newState ? 'AI 컨텍스트에서 제외' : 'AI 컨텍스트에 포함'}되었습니다.` });
+    } catch (e) {
+      toast({ title: "오류", description: "컬럼 상태 변경 실패", variant: "destructive" });
+    }
+  };
+
+  const handleDeleteColumn = async (col: any) => {
+    if (!confirm(`"${col.columnName}" 컬럼을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.`)) return;
+    try {
+      await api.deleteColumn(col.id);
+      setColumns(prev => prev.filter(c => c.id !== col.id));
+      toast({ title: "삭제됨", description: `${col.columnName} 컬럼이 삭제되었습니다.` });
+      onUpdate();
+    } catch (e) {
+      toast({ title: "오류", description: "컬럼 삭제 실패", variant: "destructive" });
     }
   };
 
@@ -299,6 +324,12 @@ export function MetadataBuilder({ table, onUpdate }: MetadataBuilderProps) {
                     />
                 </div>
               </Card>
+
+              {/* Excel Import/Export */}
+              <ExcelImportExport 
+                dataSourceId={table.dataSourceId} 
+                onImportComplete={onUpdate}
+              />
             </TabsContent>
 
             <TabsContent value="columns" className="flex-1 overflow-auto p-0 mt-0">
@@ -312,13 +343,15 @@ export function MetadataBuilder({ table, onUpdate }: MetadataBuilderProps) {
                                 <th className="p-3 font-medium w-[15%]">의미적 이름</th>
                                 <th className="p-3 font-medium w-[25%]">설명</th>
                                 <th className="p-3 font-medium w-[10%]">단위</th>
-                                <th className="p-3 font-medium text-center w-[10%]">코드</th>
+                                <th className="p-3 font-medium text-center w-[8%]">코드</th>
                                 <th className="p-3 font-medium w-[10%]">민감도</th>
+                                <th className="p-3 font-medium text-center w-[8%]">제외</th>
+                                <th className="p-3 font-medium text-center w-[5%]">삭제</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y">
                             {columns.map((col: any) => (
-                                <tr key={col.id} className="hover:bg-muted/50 group">
+                                <tr key={col.id} className={`hover:bg-muted/50 group ${col.isExcluded ? 'opacity-50 bg-muted/30' : ''}`}>
                                     <td className="p-3 font-medium font-mono text-xs">
                                         <div className="flex items-center gap-2">
                                             {col.columnName}
@@ -383,6 +416,28 @@ export function MetadataBuilder({ table, onUpdate }: MetadataBuilderProps) {
                                           <option value="CONFIDENTIAL">기밀</option>
                                           <option value="STRICT">엄격</option>
                                        </select>
+                                    </td>
+                                    <td className="p-3 text-center">
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className={`h-7 w-7 ${col.isExcluded ? 'text-orange-500 bg-orange-50' : 'text-muted-foreground hover:text-primary'}`}
+                                        onClick={() => handleToggleColumnExcluded(col)}
+                                        title={col.isExcluded ? '컬럼 포함' : '컬럼 제외'}
+                                      >
+                                        {col.isExcluded ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                                      </Button>
+                                    </td>
+                                    <td className="p-3 text-center">
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                                        onClick={() => handleDeleteColumn(col)}
+                                        title="컬럼 삭제"
+                                      >
+                                        <Trash2 className="h-4 w-4" />
+                                      </Button>
                                     </td>
                                 </tr>
                             ))}

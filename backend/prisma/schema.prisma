@@ -167,6 +167,7 @@ model ColumnMetadata {
   referencedTable  String?
   referencedColumn String?
   isNullable       Boolean  @default(true)
+  isExcluded       Boolean  @default(false)  // AI 컨텍스트에서 제외
   codeValues       Json?    // Deprecated: Use CodeValue model instead if managing complex codes
   
   codeValueList    CodeValue[]

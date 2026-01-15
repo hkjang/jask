@@ -1,9 +1,12 @@
-import { Controller, Post, Put, Get, Body, Param, UseGuards } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { Controller, Post, Put, Get, Delete, Patch, Body, Param, UseGuards, UploadedFile, UseInterceptors, Res, StreamableFile } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes, ApiBody } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { Response } from 'express';
+import * as XLSX from 'xlsx';
 import { MetadataService } from './metadata.service';
 import { MetadataAiService } from './metadata-ai.service';
-import { UpdateDescriptionDto, UpdateCodeValuesDto } from './dto/metadata.dto';
+import { UpdateDescriptionDto, UpdateCodeValuesDto, ImportMetadataDto } from './dto/metadata.dto';
 
 @ApiTags('Metadata')
 @ApiBearerAuth()
@@ -142,6 +145,91 @@ export class MetadataController {
   @ApiOperation({ summary: '관계 삭제' })
   async deleteRelationship(@Param('relationshipId') relationshipId: string) {
     return this.metadataService.deleteRelationship(relationshipId);
+  }
+
+  // --- Column Exclusion & Deletion ---
+
+  @Patch('column/:columnId/exclude')
+  @ApiOperation({ summary: '컬럼 제외 상태 토글' })
+  async setColumnExcluded(
+    @Param('columnId') columnId: string,
+    @Body() body: { isExcluded: boolean },
+  ) {
+    return this.metadataService.setColumnExcluded(columnId, body.isExcluded);
+  }
+
+  @Delete('column/:columnId')
+  @ApiOperation({ summary: '컬럼 삭제' })
+  async deleteColumn(@Param('columnId') columnId: string) {
+    return this.metadataService.deleteColumn(columnId);
+  }
+
+  // --- Excel Import/Export ---
+
+  @Get(':dataSourceId/export')
+  @ApiOperation({ summary: '메타데이터 Excel 내보내기' })
+  async exportMetadata(
+    @Param('dataSourceId') dataSourceId: string,
+    @Res() res: Response,
+  ) {
+    const rows = await this.metadataService.exportMetadataToExcel(dataSourceId);
+    
+    const workbook = XLSX.utils.book_new();
+    const worksheet = XLSX.utils.json_to_sheet(rows);
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Metadata');
+    
+    const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+    
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="metadata_${dataSourceId}.xlsx"`);
+    res.send(buffer);
+  }
+
+  @Post(':dataSourceId/import')
+  @ApiOperation({ summary: '메타데이터 Excel 가져오기' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        file: {
+          type: 'string',
+          format: 'binary',
+        },
+      },
+    },
+  })
+  @UseInterceptors(FileInterceptor('file'))
+  async importMetadata(
+    @Param('dataSourceId') dataSourceId: string,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    if (!file) {
+      throw new Error('File is required');
+    }
+
+    const workbook = XLSX.read(file.buffer, { type: 'buffer' });
+    const sheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[sheetName];
+    const rows = XLSX.utils.sheet_to_json(worksheet);
+
+    return this.metadataService.importMetadataFromExcel(dataSourceId, rows);
+  }
+
+  @Get('template/download')
+  @ApiOperation({ summary: 'Excel 템플릿 다운로드' })
+  async downloadTemplate(@Res() res: Response) {
+    const rows = this.metadataService.getExcelTemplate();
+    
+    const workbook = XLSX.utils.book_new();
+    const worksheet = XLSX.utils.json_to_sheet(rows);
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Template');
+    
+    const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+    
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename="metadata_template.xlsx"');
+    res.send(buffer);
   }
 
   // Legacy Endpoints Support (Optional: redirect to new methods or keep simple)

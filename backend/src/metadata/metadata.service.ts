@@ -767,6 +767,7 @@ export class MetadataService {
         unit: dto.unit,
         isCode: dto.isCode,
         sensitivityLevel: dto.sensitivityLevel as any,
+        isExcluded: dto.isExcluded,
       },
     });
   }
@@ -857,6 +858,19 @@ export class MetadataService {
     return this.prisma.tableMetadata.update({
       where: { id: tableId },
       data: { isExcluded },
+    });
+  }
+
+  async setColumnExcluded(columnId: string, isExcluded: boolean) {
+    return this.prisma.columnMetadata.update({
+      where: { id: columnId },
+      data: { isExcluded },
+    });
+  }
+
+  async deleteColumn(columnId: string) {
+    return this.prisma.columnMetadata.delete({
+      where: { id: columnId },
     });
   }
 
@@ -1072,5 +1086,139 @@ Include ALL ${table.columns.length} columns in your response.`;
     }
 
     return { success: true, processed: processedRequestCount, total: totalTables };
+  }
+
+  // ===========================================
+  // Excel Import/Export Methods
+  // ===========================================
+
+  async exportMetadataToExcel(dataSourceId: string) {
+    const tables = await this.prisma.tableMetadata.findMany({
+      where: { dataSourceId },
+      include: {
+        columns: {
+          include: { codeValueList: { where: { isActive: true } } }
+        }
+      },
+      orderBy: { tableName: 'asc' }
+    });
+
+    const rows: any[] = [];
+
+    for (const table of tables) {
+      for (const col of table.columns) {
+        const codeValuesStr = col.codeValueList && col.codeValueList.length > 0
+          ? col.codeValueList.map(cv => `${cv.code}=${cv.value}`).join(', ')
+          : '';
+
+        rows.push({
+          '테이블명': table.tableName,
+          '컬럼명': col.columnName,
+          '논리적 이름': col.semanticName || '',
+          '설명': col.description || '',
+          '코드값': codeValuesStr,
+          '데이터 타입': col.dataType,
+          '민감도': col.sensitivityLevel,
+          '제외 여부': col.isExcluded ? 'Y' : 'N'
+        });
+      }
+    }
+
+    return rows;
+  }
+
+  async importMetadataFromExcel(dataSourceId: string, rows: any[]) {
+    let updated = 0;
+    let skipped = 0;
+    const errors: string[] = [];
+
+    // Get all tables for this datasource
+    const tables = await this.prisma.tableMetadata.findMany({
+      where: { dataSourceId },
+      include: { columns: true }
+    });
+
+    const tableMap = new Map(tables.map(t => [t.tableName.toLowerCase(), t]));
+
+    for (const row of rows) {
+      const tableName = row['테이블명'] || row['tableName'];
+      const columnName = row['컬럼명'] || row['columnName'];
+      
+      if (!tableName || !columnName) {
+        skipped++;
+        continue;
+      }
+
+      const table = tableMap.get(tableName.toLowerCase());
+      if (!table) {
+        errors.push(`테이블 "${tableName}" 을 찾을 수 없습니다.`);
+        skipped++;
+        continue;
+      }
+
+      const column = table.columns.find(c => c.columnName.toLowerCase() === columnName.toLowerCase());
+      if (!column) {
+        errors.push(`테이블 "${tableName}"에서 컬럼 "${columnName}"을 찾을 수 없습니다.`);
+        skipped++;
+        continue;
+      }
+
+      // Update column metadata
+      const semanticName = row['논리적 이름'] || row['semanticName'];
+      const description = row['설명'] || row['description'];
+      const codeValuesStr = row['코드값'] || row['codeValues'];
+
+      await this.prisma.columnMetadata.update({
+        where: { id: column.id },
+        data: {
+          semanticName: semanticName || column.semanticName,
+          description: description || column.description,
+        }
+      });
+
+      // Parse and create code values if provided
+      if (codeValuesStr && codeValuesStr.trim()) {
+        // Format: "A=활성, I=비활성"
+        const pairs = codeValuesStr.split(',').map((p: string) => p.trim());
+        for (const pair of pairs) {
+          const [code, value] = pair.split('=').map((s: string) => s.trim());
+          if (code && value) {
+            await this.prisma.codeValue.upsert({
+              where: { columnId_code: { columnId: column.id, code } },
+              update: { value },
+              create: { columnId: column.id, code, value }
+            });
+            // Also mark column as code column
+            await this.prisma.columnMetadata.update({
+              where: { id: column.id },
+              data: { isCode: true }
+            });
+          }
+        }
+      }
+
+      updated++;
+    }
+
+    return { updated, skipped, total: rows.length, errors };
+  }
+
+  getExcelTemplate() {
+    return [
+      {
+        '테이블명': 'users',
+        '컬럼명': 'status',
+        '논리적 이름': '상태',
+        '설명': '사용자 계정 상태',
+        '코드값': 'A=활성, I=비활성, D=삭제'
+      },
+      {
+        '테이블명': 'orders',
+        '컬럼명': 'order_date',
+        '논리적 이름': '주문일자',
+        '설명': '주문이 생성된 날짜',
+        '코드값': ''
+      }
+    ];
   }
 }

@@ -516,6 +516,83 @@ class ApiClient {
   async deleteRelationship(relationshipId: string) {
     return this.request(`/metadata/relationships/${relationshipId}/delete`, { method: 'POST' });
   }
+
+  async setColumnExcluded(columnId: string, isExcluded: boolean) {
+    return this.request(`/metadata/column/${columnId}/exclude`, { method: 'PATCH', body: { isExcluded } });
+  }
+
+  async deleteColumn(columnId: string) {
+    return this.request(`/metadata/column/${columnId}`, { method: 'DELETE' });
+  }
+
+  async exportMetadataExcel(dataSourceId: string) {
+    const token = this.getToken();
+    const headers: any = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    
+    const response = await fetch(`${API_BASE_URL}/metadata/${dataSourceId}/export`, {
+      method: 'GET',
+      headers,
+    });
+    
+    if (!response.ok) throw new Error('Export failed');
+    
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `metadata_${dataSourceId}.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  }
+
+  async importMetadataExcel(dataSourceId: string, file: File) {
+    const token = this.getToken();
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    const headers: any = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    
+    const response = await fetch(`${API_BASE_URL}/metadata/${dataSourceId}/import`, {
+      method: 'POST',
+      headers,
+      body: formData,
+    });
+    
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.message || 'Import failed');
+    }
+    
+    return response.json();
+  }
+
+  async downloadMetadataTemplate() {
+    const token = this.getToken();
+    const headers: any = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    
+    const response = await fetch(`${API_BASE_URL}/metadata/template/download`, {
+      method: 'GET',
+      headers,
+    });
+    
+    if (!response.ok) throw new Error('Template download failed');
+    
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'metadata_template.xlsx';
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  }
+
   // Threads
   async getThreads() {
     return this.request<any[]>('/threads');
