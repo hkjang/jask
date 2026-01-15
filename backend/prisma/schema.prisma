@@ -299,6 +299,9 @@ model User {
   threads      Thread[]
   participations UserThread[]
 
+  // Security Audit
+  auditLogs    AuditLog[]
+
   // Profile
   department   String?
   preferences  Json?
@@ -307,6 +310,7 @@ model User {
   updatedAt    DateTime @updatedAt
 
   @@index([email])
+
 
   actions      UserActionLog[]
 }
@@ -734,3 +738,72 @@ model PolicyAdjustmentLog {
   revertedAt  DateTime?
 }
 
+// ===========================================
+// 보안 감사 로그
+// ===========================================
+enum AuditActionType {
+  DDL_CREATE
+  DDL_ALTER
+  DDL_DROP
+  DDL_TRUNCATE
+  DML_INSERT
+  DML_UPDATE
+  DML_DELETE
+  QUERY_EXECUTE
+  AUTH_LOGIN
+  AUTH_LOGOUT
+  AUTH_FAILED
+  CONFIG_CHANGE
+  DATA_EXPORT
+  DESTRUCTIVE_CONFIRM
+}
+
+enum AuditSeverity {
+  INFO
+  WARNING
+  DANGER
+  CRITICAL
+}
+
+model AuditLog {
+  id            String          @id @default(uuid())
+  
+  // 작업 정보
+  actionType    AuditActionType
+  severity      AuditSeverity   @default(INFO)
+  description   String
+  
+  // SQL 관련
+  sqlQuery      String?         @db.Text
+  tableName     String?
+  affectedRows  Int?
+  
+  // 사용자 정보
+  userId        String?
+  user          User?           @relation(fields: [userId], references: [id])
+  userEmail     String?
+  userName      String?
+  ipAddress     String?
+  userAgent     String?
+  
+  // 데이터소스
+  dataSourceId  String?
+  dataSourceName String?
+  
+  // 실행 결과
+  success       Boolean         @default(true)
+  errorMessage  String?
+  executionTime Int?            // ms
+  
+  // 메타데이터
+  metadata      Json?
+  
+  createdAt     DateTime        @default(now())
+  
+  @@index([actionType])
+  @@index([severity])
+  @@index([userId])
+  @@index([dataSourceId])
+  @@index([createdAt])
+  @@index([success])
+}

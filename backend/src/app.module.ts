@@ -12,6 +12,7 @@ import { QueryModule } from './query/query.module';
 import { AdminModule } from './admin/admin.module';
 import { EvolutionModule } from './evolution/evolution.module';
 import { ThreadModule } from './thread/thread.module';
+import { AuditModule } from './audit/audit.module';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { ThreadModule } from './thread/thread.module';
     AdminModule,
     EvolutionModule,
     ThreadModule,
+    AuditModule,
   ],
 })
 export class AppModule {}

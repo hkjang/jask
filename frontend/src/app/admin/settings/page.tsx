@@ -48,6 +48,7 @@ import {
   RefreshCw,
   AlertTriangle,
   Crown,
+  RotateCcw,
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -969,6 +970,28 @@ export default function AdminSettingsPage() {
                         key: 'sql_allow_destructive',
                         value: checked,
                         description: '파괴적 명령(DROP/TRUNCATE/DELETE) 허용'
+                    })}
+                  />
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardContent className="flex items-center justify-between py-4">
+                  <div className="flex items-center gap-4">
+                    <div className="flex items-center justify-center h-10 w-10 rounded-lg bg-cyan-500/10 text-cyan-500">
+                      <RotateCcw className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <p className="font-medium">트랜잭션 모드</p>
+                      <p className="text-sm text-muted-foreground">다중 DML 실행 시 트랜잭션으로 묶어 실패 시 롤백</p>
+                    </div>
+                  </div>
+                  <Switch 
+                    checked={settings['sql_use_transaction'] === true} 
+                    onCheckedChange={(checked) => settingMutation.mutate({
+                        key: 'sql_use_transaction',
+                        value: checked,
+                        description: '다중 DML 트랜잭션 모드'
                     })}
                   />
                 </CardContent>

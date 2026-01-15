@@ -48,6 +48,21 @@ export class ExecutionService {
       throw new BadRequestException(validation.errors.join(', '));
     }
 
+    // DDL/DML 감사 로깅
+    const upperSql = validation.sanitizedSql?.toUpperCase() || sql.toUpperCase();
+    const isDDL = upperSql.startsWith('CREATE') || upperSql.startsWith('ALTER') || upperSql.startsWith('DROP') || upperSql.startsWith('TRUNCATE');
+    const isDML = upperSql.startsWith('INSERT') || upperSql.startsWith('UPDATE') || upperSql.startsWith('DELETE');
+    
+    if (isDDL || isDML) {
+      const sqlType = isDDL ? 'DDL' : 'DML';
+      const operation = upperSql.split(/\s+/)[0];
+      this.logger.warn(`[AUDIT] ${sqlType} 실행: ${operation} - DataSource: ${dataSourceId} - SQL: ${sql.substring(0, 100)}...`);
+      
+      if (validation.destructiveOperations?.length) {
+        this.logger.warn(`[AUDIT] ⚠️ 파괴적 명령 실행: ${validation.destructiveOperations.join(', ')}`);
+      }
+    }
+
     const sanitizedSql = validation.sanitizedSql || sql;
 
     const { client, type } = await this.dataSourcesService.getConnection(dataSourceId);
@@ -205,17 +220,40 @@ export class ExecutionService {
       // DDL/DML - handle multiple statements separated by semicolons
       const statements = sql.split(';').map(s => s.trim()).filter(s => s.length > 0);
       let totalRowsAffected = 0;
+      let executedCount = 0;
       
-      for (const stmt of statements) {
-        const stmtResult = await client.execute(stmt, [], {
-          autoCommit: true,
-        });
-        totalRowsAffected += stmtResult.rowsAffected || 0;
+      // Check if transaction mode is enabled (only for DML, not DDL)
+      // DDL auto-commits in Oracle, so transaction mode only applies to DML
+      const useTransaction = isDML && statements.length > 1;
+      
+      try {
+        for (const stmt of statements) {
+          const stmtResult = await client.execute(stmt, [], {
+            autoCommit: !useTransaction, // Don't auto-commit if in transaction mode
+          });
+          totalRowsAffected += stmtResult.rowsAffected || 0;
+          executedCount++;
+        }
+        
+        // Commit transaction if all statements succeeded
+        if (useTransaction) {
+          await client.commit();
+          this.logger.log(`Transaction committed: ${executedCount} statements`);
+        }
+      } catch (error: any) {
+        // Rollback on failure if in transaction mode
+        if (useTransaction && executedCount > 0) {
+          await client.rollback();
+          this.logger.warn(`Transaction rolled back: ${executedCount}/${statements.length} statements executed before failure`);
+          throw new Error(`${error.message} (롤백됨: ${executedCount}개 문장이 롤백되었습니다)`);
+        }
+        throw error;
       }
       
       result = { 
         rowsAffected: totalRowsAffected,
-        statementsExecuted: statements.length 
+        statementsExecuted: statements.length,
+        transactionUsed: useTransaction,
       };
     } else {
       // Other statements
@@ -227,11 +265,45 @@ export class ExecutionService {
     const executionTime = Date.now() - startTime;
     
     if (isSelect) {
-      const rows = result.rows || [];
-      const truncated = rows.length > maxRows;
+      const rawRows = result.rows || [];
+      const truncated = rawRows.length > maxRows;
+      
+      // Deep clone to plain objects to avoid circular reference issues (NVPair)
+      // Handle CLOB/LOB objects specially
+      const rows = await Promise.all(rawRows.slice(0, maxRows).map(async (row: any) => {
+        const plainRow: Record<string, any> = {};
+        for (const key of Object.keys(row)) {
+          const val = row[key];
+          if (val === null || val === undefined) {
+            plainRow[key] = val;
+          } else if (typeof val === 'object' && val.getData) {
+            // Oracle LOB object - read the data
+            try {
+              plainRow[key] = await val.getData();
+            } catch {
+              plainRow[key] = '[LOB data]';
+            }
+          } else if (typeof val === 'object' && val instanceof Date) {
+            plainRow[key] = val.toISOString();
+          } else if (typeof val !== 'object') {
+            plainRow[key] = val;
+          } else if (Buffer.isBuffer(val)) {
+            plainRow[key] = val.toString('base64');
+          } else {
+            // Try to get a string representation
+            try {
+              plainRow[key] = JSON.stringify(val);
+            } catch {
+              plainRow[key] = String(val);
+            }
+          }
+        }
+        return plainRow;
+      }));
+      
       return {
-        rows: rows.slice(0, maxRows),
-        rowCount: rows.length,
+        rows,
+        rowCount: rawRows.length,
         fields: result.metaData?.map((m: any) => ({
           name: m.name,
           type: this.mapOracleType(m.dbType),
@@ -352,6 +424,24 @@ export class ExecutionService {
         1400: 'NULL을 삽입할 수 없습니다.',
         2291: '외래 키 제약 조건 위반 - 부모 키가 없습니다.',
         2292: '외래 키 제약 조건 위반 - 자식 레코드가 존재합니다.',
+        // Extended error codes
+        28: '세션이 종료되었습니다. 다시 연결하세요.',
+        54: '리소스가 사용 중입니다. 잠시 후 다시 시도하세요.',
+        60: '교착 상태 감지됨. 트랜잭션이 롤백되었습니다.',
+        1410: '잘못된 ROWID입니다.',
+        1438: '숫자의 자릿수가 허용 범위를 초과합니다.',
+        1427: '단일 행 하위 쿼리가 여러 행을 반환했습니다.',
+        1476: '0으로 나눌 수 없습니다.',
+        1652: '임시 세그먼트를 확장할 수 없습니다.',
+        1654: '인덱스를 확장할 수 없습니다.',
+        1688: '테이블을 파티션 확장할 수 없습니다.',
+        4031: '공유 메모리가 부족합니다.',
+        4068: '패키지 상태가 삭제되었습니다. 다시 실행하세요.',
+        12170: 'TNS 연결 시간이 초과되었습니다.',
+        12537: '연결이 끊어졌습니다.',
+        12560: 'TNS 프로토콜 어댑터 오류입니다.',
+        12899: '값이 너무 큽니다. 컬럼 크기를 확인하세요.',
+        22992: '드라이버가 CLOB을 여는 데 실패했습니다.',
       };
       
       if (oracleErrors[errorNum]) {

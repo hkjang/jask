@@ -316,6 +316,21 @@ ${schemaContext}`;
           
           trustScore = 1.0; // Update local for stream output
 
+          // DDL 실행 후 메타데이터 자동 동기화
+          const executedSqlUpper = (validation.sanitizedSql || generatedSql).toUpperCase();
+          const isDDL = executedSqlUpper.startsWith('CREATE') || executedSqlUpper.startsWith('ALTER') || executedSqlUpper.startsWith('DROP');
+          if (isDDL) {
+            this.logger.log(`[DDL] DDL 실행 성공, 메타데이터 자동 동기화 트리거`);
+            yield { type: 'step_start', step: 'metadata_sync', message: '스키마 변경 감지, 메타데이터 동기화 중...' };
+            try {
+              await this.metadataService.syncMetadata(dataSourceId);
+              this.logger.log(`[DDL] 메타데이터 동기화 완료`);
+              yield { type: 'metadata_synced', message: '메타데이터가 자동으로 동기화되었습니다.' };
+            } catch (syncError) {
+              this.logger.warn(`[DDL] 메타데이터 동기화 실패: ${syncError.message}`);
+            }
+          }
+
           yield { type: 'execution_result', result };
         } catch (error) {
           // Auto-correction attempt
