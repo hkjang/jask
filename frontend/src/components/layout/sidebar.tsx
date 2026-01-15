@@ -18,6 +18,7 @@ import {
   ShieldAlert,
   Sparkles,
   User,
+  Users,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -38,6 +39,7 @@ const navItems = [
 const adminItems = [
   { href: '/admin/dashboard', icon: Layout, label: '대시보드' },
   { href: '/admin/chat-history', icon: MessageSquare, label: '대화 이력' },
+  { href: '/admin/users', icon: Users, label: '사용자 관리' },
   { href: '/admin/settings', icon: Settings, label: '설정' },
   { href: '/admin/sample-queries', icon: FileText, label: '샘플 쿼리' },
   { href: '/admin/policies', icon: ShieldAlert, label: '정책 관리' },

@@ -93,6 +93,30 @@ export class AdminController {
     return this.adminService.toggleUserActive(id);
   }
 
+  @Get('users/:id')
+  @ApiOperation({ summary: '사용자 상세 조회' })
+  getUser(@Param('id') id: string) {
+    return this.adminService.getUser(id);
+  }
+
+  @Post('users')
+  @ApiOperation({ summary: '사용자 생성' })
+  createUser(@Body() body: { email: string; password: string; name: string; role?: 'USER' | 'ADMIN'; department?: string }) {
+    return this.adminService.createUser(body);
+  }
+
+  @Put('users/:id')
+  @ApiOperation({ summary: '사용자 정보 수정' })
+  updateUser(@Param('id') id: string, @Body() body: { name?: string; department?: string; email?: string }) {
+    return this.adminService.updateUser(id, body);
+  }
+
+  @Delete('users/:id')
+  @ApiOperation({ summary: '사용자 삭제' })
+  deleteUser(@Param('id') id: string) {
+    return this.adminService.deleteUser(id);
+  }
+
   // 대화 이력 (관리자용)
   @Get('threads')
   @ApiOperation({ summary: '전체 대화 이력' })

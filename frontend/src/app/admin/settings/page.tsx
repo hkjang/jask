@@ -312,7 +312,7 @@ export default function AdminSettingsPage() {
         </div>
 
         <Tabs defaultValue="llm" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-5">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="llm" className="flex items-center gap-2">
               <Server className="h-4 w-4" />
               LLM
@@ -324,10 +324,6 @@ export default function AdminSettingsPage() {
             <TabsTrigger value="settings" className="flex items-center gap-2">
               <Database className="h-4 w-4" />
               설정
-            </TabsTrigger>
-            <TabsTrigger value="users" className="flex items-center gap-2">
-              <Users className="h-4 w-4" />
-              사용자
             </TabsTrigger>
             <TabsTrigger value="security" className="flex items-center gap-2">
               <Shield className="h-4 w-4" />
@@ -824,66 +820,6 @@ export default function AdminSettingsPage() {
                 </div>
               </CardContent>
             </Card>
-          </TabsContent>
-
-          {/* Users Tab */}
-          <TabsContent value="users" className="space-y-4">
-            <div>
-              <h2 className="text-xl font-semibold">사용자 관리</h2>
-              <p className="text-sm text-muted-foreground">등록된 사용자를 관리합니다</p>
-            </div>
-
-            {usersLoading ? (
-              <div className="flex items-center justify-center py-12">
-                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-              </div>
-            ) : (
-              <Card>
-                <CardContent className="p-0">
-                  <div className="divide-y">
-                    {users.map((user) => (
-                      <div key={user.id} className="flex items-center justify-between p-4 hover:bg-muted/50 transition-colors">
-                        <div className="flex items-center gap-4">
-                          <div className={`flex items-center justify-center h-10 w-10 rounded-full ${user.role === 'ADMIN' ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>
-                            {user.role === 'ADMIN' ? <Crown className="h-5 w-5" /> : <Users className="h-5 w-5" />}
-                          </div>
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <p className="font-medium">{user.name}</p>
-                              <Badge variant={user.role === 'ADMIN' ? 'default' : 'secondary'}>{user.role}</Badge>
-                              {!user.isActive && <Badge variant="destructive">비활성</Badge>}
-                            </div>
-                            <p className="text-sm text-muted-foreground">
-                              {user.email} · 쿼리 {user._count?.queries || 0}회
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => userMutation.mutate({
-                              userId: user.id,
-                              action: 'role',
-                              data: { role: user.role === 'ADMIN' ? 'USER' : 'ADMIN' },
-                            })}
-                          >
-                            {user.role === 'ADMIN' ? '일반으로' : '관리자로'}
-                          </Button>
-                          <Button
-                            variant={user.isActive ? 'outline' : 'default'}
-                            size="sm"
-                            onClick={() => userMutation.mutate({ userId: user.id, action: 'toggle' })}
-                          >
-                            {user.isActive ? '비활성화' : '활성화'}
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            )}
           </TabsContent>
 
           {/* Security Tab */}

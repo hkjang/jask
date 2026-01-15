@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { LLMService } from '../llm/llm.service';
+import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class AdminService {
@@ -112,6 +113,86 @@ export class AdminService {
       where: { id: userId },
       data: { isActive: !user?.isActive },
     });
+  }
+
+  async getUser(userId: string) {
+    return this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        isActive: true,
+        createdAt: true,
+        preferences: true,
+        _count: { select: { queries: true } },
+      },
+    });
+  }
+
+  async createUser(data: { 
+    email: string; 
+    password: string; 
+    name: string; 
+    role?: 'USER' | 'ADMIN'; 
+    department?: string;
+  }) {
+    // Hash password using bcrypt
+    const hashedPassword = await bcrypt.hash(data.password, 10);
+    
+    const preferences = data.department ? { department: data.department } : {};
+    
+    return this.prisma.user.create({
+      data: {
+        email: data.email,
+        password: hashedPassword,
+        name: data.name,
+        role: data.role || 'USER',
+        preferences,
+      },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        isActive: true,
+        createdAt: true,
+      },
+    });
+  }
+
+  async updateUser(userId: string, data: { name?: string; department?: string; email?: string }) {
+    const updateData: any = {};
+    
+    if (data.name) updateData.name = data.name;
+    if (data.email) updateData.email = data.email;
+    
+    // Handle department in preferences
+    if (data.department !== undefined) {
+      const user = await this.prisma.user.findUnique({ where: { id: userId } });
+      const currentPrefs = (user?.preferences as any) || {};
+      updateData.preferences = { ...currentPrefs, department: data.department };
+    }
+    
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: updateData,
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        isActive: true,
+        preferences: true,
+      },
+    });
+  }
+
+  async deleteUser(userId: string) {
+    // Soft delete approach: just deactivate and anonymize
+    // Or hard delete if preferred
+    return this.prisma.user.delete({ where: { id: userId } });
   }
 
   // 전체 대화 이력 (관리자용)
