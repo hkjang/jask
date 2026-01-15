@@ -907,6 +907,72 @@ export default function AdminSettingsPage() {
                   />
                 </CardContent>
               </Card>
+
+              <Card>
+                <CardContent className="flex items-center justify-between py-4">
+                  <div className="flex items-center gap-4">
+                    <div className="flex items-center justify-center h-10 w-10 rounded-lg bg-orange-500/10 text-orange-500">
+                      <Database className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <p className="font-medium">DDL 허용 (CREATE/ALTER/DROP)</p>
+                      <p className="text-sm text-muted-foreground">테이블 생성, 수정, 삭제 등 DDL 명령 허용</p>
+                    </div>
+                  </div>
+                  <Switch 
+                    checked={settings['sql_allow_ddl'] === true} 
+                    onCheckedChange={(checked) => settingMutation.mutate({
+                        key: 'sql_allow_ddl',
+                        value: checked,
+                        description: 'DDL 명령(CREATE/ALTER/DROP) 허용'
+                    })}
+                  />
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardContent className="flex items-center justify-between py-4">
+                  <div className="flex items-center gap-4">
+                    <div className="flex items-center justify-center h-10 w-10 rounded-lg bg-red-500/10 text-red-500">
+                      <Edit2 className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <p className="font-medium">DML 허용 (INSERT/UPDATE/DELETE)</p>
+                      <p className="text-sm text-muted-foreground">데이터 삽입, 수정, 삭제 등 DML 명령 허용</p>
+                    </div>
+                  </div>
+                  <Switch 
+                    checked={settings['sql_allow_writes'] === true} 
+                    onCheckedChange={(checked) => settingMutation.mutate({
+                        key: 'sql_allow_writes',
+                        value: checked,
+                        description: 'DML 명령(INSERT/UPDATE/DELETE) 허용'
+                    })}
+                  />
+                </CardContent>
+              </Card>
+
+              <Card className="border-destructive/50">
+                <CardContent className="flex items-center justify-between py-4">
+                  <div className="flex items-center gap-4">
+                    <div className="flex items-center justify-center h-10 w-10 rounded-lg bg-destructive/10 text-destructive">
+                      <Trash2 className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <p className="font-medium text-destructive">파괴적 명령 허용 (DROP/TRUNCATE/DELETE)</p>
+                      <p className="text-sm text-muted-foreground">⚠️ 데이터나 테이블을 삭제하는 위험한 명령 허용 (실행 전 확인 필요)</p>
+                    </div>
+                  </div>
+                  <Switch 
+                    checked={settings['sql_allow_destructive'] === true} 
+                    onCheckedChange={(checked) => settingMutation.mutate({
+                        key: 'sql_allow_destructive',
+                        value: checked,
+                        description: '파괴적 명령(DROP/TRUNCATE/DELETE) 허용'
+                    })}
+                  />
+                </CardContent>
+              </Card>
             </div>
           </TabsContent>
         </Tabs>

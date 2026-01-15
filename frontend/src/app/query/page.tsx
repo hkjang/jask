@@ -39,6 +39,16 @@ import { ThreadSidebar } from '@/components/chat/ThreadSidebar';
 import { CommentSection } from './_components/comment-section';
 import { FeedbackDialog } from './_components/feedback-dialog';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
   Send,
   Database,
   Loader2,
@@ -233,6 +243,13 @@ function QueryPageContent() {
   // Feedback State
   const [feedbackQueryId, setFeedbackQueryId] = useState<string | null>(null);
   const [isFeedbackDialogOpen, setIsFeedbackDialogOpen] = useState(false);
+
+  // Destructive SQL Confirmation State
+  const [pendingDestructiveExec, setPendingDestructiveExec] = useState<{
+    queryId: string;
+    sql: string;
+    operations: string[];
+  } | null>(null);
 
   // Query History
   const { data: historyData, isLoading: isHistoryLoading, refetch: refetchHistory } = useQuery({
@@ -590,7 +607,35 @@ function QueryPageContent() {
     toast({ title: 'SQL이 복사되었습니다' });
   };
 
+  // 파괴적 SQL 감지
+  const isDestructiveSQL = (sql: string): string[] => {
+    const destructiveKeywords = ['DROP', 'TRUNCATE', 'DELETE'];
+    const upperSql = sql.toUpperCase();
+    return destructiveKeywords.filter(kw => new RegExp(`\\b${kw}\\b`).test(upperSql));
+  };
 
+  // 확인이 필요한 SQL 실행 처리
+  const handleExecuteWithConfirmation = (queryId: string, sql: string) => {
+    const destructiveOps = isDestructiveSQL(sql);
+    if (destructiveOps.length > 0) {
+      // 파괴적 명령 감지 - 확인 요청
+      setPendingDestructiveExec({ queryId, sql, operations: destructiveOps });
+    } else {
+      // 안전한 SQL - 바로 실행
+      executeMutation.mutate({ queryId, sql });
+    }
+  };
+
+  // 확인 후 실행
+  const confirmDestructiveExecution = () => {
+    if (pendingDestructiveExec) {
+      executeMutation.mutate({ 
+        queryId: pendingDestructiveExec.queryId, 
+        sql: pendingDestructiveExec.sql 
+      });
+      setPendingDestructiveExec(null);
+    }
+  };
 
   const selectedDS = dataSources.find((ds: any) => ds.id === selectedDataSource);
 
@@ -715,7 +760,7 @@ function QueryPageContent() {
                 </div>
               )}
 
-              <div className={`max-w-[80%] ${message.role === 'user' ? 'order-first' : ''}`}>
+              <div className={`max-w-[80%] min-w-0 overflow-hidden ${message.role === 'user' ? 'order-first' : ''}`}>
                 {message.role === 'user' ? (
                   <div className="bg-primary text-primary-foreground rounded-2xl rounded-tr-sm px-4 py-2.5">
                     <p>{message.content}</p>
@@ -741,7 +786,7 @@ function QueryPageContent() {
                         </div>
                       </div>
                     ) : message.isLoading && message.content ? (
-                      <div className="bg-muted rounded-2xl rounded-tl-sm px-4 py-3 text-sm">
+                      <div className="bg-muted rounded-2xl rounded-tl-sm px-4 py-3 text-sm break-words overflow-hidden">
                         <div className="flex items-center gap-2 mb-2 pb-2 border-b border-border/50">
                           <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
                           <span className="text-xs text-primary font-medium">실시간 스트리밍...</span>
@@ -765,7 +810,7 @@ function QueryPageContent() {
                             <p className="text-sm">{message.error}</p>
                           </div>
                         ) : (
-                          <div className="bg-muted rounded-2xl rounded-tl-sm px-4 py-3 text-sm">
+                          <div className="bg-muted rounded-2xl rounded-tl-sm px-4 py-3 text-sm break-words overflow-hidden">
                             <ReactMarkdown
                               remarkPlugins={[remarkGfm]}
                               components={{
@@ -901,10 +946,10 @@ function QueryPageContent() {
                                       size={message.result ? "icon" : "sm"}
                                       className={`${message.result ? "h-6 w-6 text-zinc-400 hover:text-white" : "h-7 gap-1.5 bg-green-600 hover:bg-green-700 text-white"}`}
                                       onClick={() =>
-                                        executeMutation.mutate({
-                                          queryId: message.queryId!,
-                                          sql: message.sql!,
-                                        })
+                                        handleExecuteWithConfirmation(
+                                          message.queryId!,
+                                          message.sql!
+                                        )
                                       }
                                       title="Run Query"
                                     >
@@ -1446,6 +1491,40 @@ function QueryPageContent() {
             }
         }}
       />
+
+      {/* Destructive SQL Confirmation Dialog */}
+      <AlertDialog open={!!pendingDestructiveExec} onOpenChange={(open) => !open && setPendingDestructiveExec(null)}>
+        <AlertDialogContent className="border-destructive/50">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-destructive flex items-center gap-2">
+              ⚠️ 위험한 SQL 명령 확인
+            </AlertDialogTitle>
+            <AlertDialogDescription className="space-y-3">
+              <p>다음 파괴적 명령이 감지되었습니다:</p>
+              <div className="flex gap-2 flex-wrap">
+                {pendingDestructiveExec?.operations.map((op) => (
+                  <Badge key={op} variant="destructive">{op}</Badge>
+                ))}
+              </div>
+              <div className="bg-muted p-3 rounded-md font-mono text-xs max-h-40 overflow-auto">
+                {pendingDestructiveExec?.sql}
+              </div>
+              <p className="text-destructive font-medium">
+                이 명령은 데이터나 테이블을 영구적으로 삭제할 수 있습니다. 정말 실행하시겠습니까?
+              </p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>취소</AlertDialogCancel>
+            <AlertDialogAction 
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={confirmDestructiveExecution}
+            >
+              실행 확인
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </MainLayout>
     </TooltipProvider>
   );

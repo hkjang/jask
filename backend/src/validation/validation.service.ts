@@ -6,6 +6,8 @@ export interface ValidationResult {
   errors: string[];
   warnings: string[];
   sanitizedSql?: string;
+  requiresConfirmation?: boolean;       // 파괴적 명령 확인 필요
+  destructiveOperations?: string[];     // 감지된 파괴적 명령 목록
 }
 
 @Injectable()
@@ -14,6 +16,7 @@ export class ValidationService {
   private readonly maxRows: number;
   private readonly allowWrites: boolean;
   private readonly allowDDL: boolean;
+  private readonly allowDestructive: boolean;
 
   // 위험 키워드 목록
   private readonly dangerousKeywords = [
@@ -21,6 +24,9 @@ export class ValidationService {
     'CREATE', 'GRANT', 'REVOKE', 'EXEC', 'EXECUTE', 'MERGE',
     'REPLACE', 'CALL', 'SET', 'DECLARE',
   ];
+
+  // 파괴적 키워드 (확인 필요)
+  private readonly destructiveKeywords = ['DROP', 'TRUNCATE', 'DELETE'];
 
   // 위험한 함수 패턴
   private readonly dangerousPatterns = [
@@ -40,6 +46,7 @@ export class ValidationService {
     this.maxRows = this.configService.get<number>('SQL_MAX_ROWS', 1000);
     this.allowWrites = this.configService.get<boolean>('SQL_ALLOW_WRITES', false);
     this.allowDDL = this.configService.get<boolean>('SQL_ALLOW_DDL', false);
+    this.allowDestructive = this.configService.get<boolean>('SQL_ALLOW_DESTRUCTIVE', false);
   }
 
   validate(sql: string): ValidationResult {
@@ -92,26 +99,51 @@ export class ValidationService {
       }
     }
 
-    // 위험한 패턴 검사
-    for (const pattern of this.dangerousPatterns) {
-      if (pattern.test(sql)) {
-        errors.push('잠재적으로 위험한 SQL 패턴이 감지되었습니다.');
-        break;
+    // 위험한 패턴 검사 (DDL/DML 제외)
+    if (!isDDL && !isDML) {
+      for (const pattern of this.dangerousPatterns) {
+        if (pattern.test(sql)) {
+          errors.push('잠재적으로 위험한 SQL 패턴이 감지되었습니다.');
+          break;
+        }
       }
-    }
-
-    // LIMIT 검사
-    if (!normalizedSql.includes('LIMIT') && !normalizedSql.includes('TOP') && 
-        !normalizedSql.includes('FETCH FIRST') && !normalizedSql.includes('ROWNUM')) {
-      warnings.push(`LIMIT 절이 없습니다. 최대 ${this.maxRows}개로 제한됩니다.`);
     }
 
     // SQL 정제
     let sanitizedSql = this.sanitize(sql);
 
-    // LIMIT 강제 추가
-    if (!normalizedSql.includes('LIMIT')) {
-      sanitizedSql = this.addLimit(sanitizedSql, this.maxRows);
+    // LIMIT 검사 및 추가 (SELECT 쿼리에서만)
+    if (isSelectOrWith) {
+      if (!normalizedSql.includes('LIMIT') && !normalizedSql.includes('TOP') && 
+          !normalizedSql.includes('FETCH FIRST') && !normalizedSql.includes('ROWNUM')) {
+        warnings.push(`LIMIT 절이 없습니다. 최대 ${this.maxRows}개로 제한됩니다.`);
+      }
+
+      // LIMIT 강제 추가 (SELECT만)
+      if (!normalizedSql.includes('LIMIT') && !normalizedSql.includes('ROWNUM') && 
+          !normalizedSql.includes('FETCH FIRST')) {
+        sanitizedSql = this.addLimit(sanitizedSql, this.maxRows);
+      }
+    }
+
+    // 파괴적 명령 감지 (DROP, TRUNCATE, DELETE)
+    const detectedDestructiveOps: string[] = [];
+    for (const keyword of this.destructiveKeywords) {
+      const regex = new RegExp(`\\b${keyword}\\b`, 'i');
+      if (regex.test(normalizedSql)) {
+        detectedDestructiveOps.push(keyword);
+      }
+    }
+
+    // 파괴적 명령이 있고, 설정에서 허용하지 않으면 에러
+    if (detectedDestructiveOps.length > 0 && !this.allowDestructive) {
+      errors.push(`파괴적 명령(${detectedDestructiveOps.join(', ')})은 허용되지 않습니다. 설정에서 SQL_ALLOW_DESTRUCTIVE를 활성화하세요.`);
+    }
+
+    // 파괴적 명령이 있으면 확인 필요
+    const requiresConfirmation = detectedDestructiveOps.length > 0 && this.allowDestructive;
+    if (requiresConfirmation) {
+      warnings.push(`⚠️ 파괴적 명령(${detectedDestructiveOps.join(', ')})이 감지되었습니다. 실행 전 확인이 필요합니다.`);
     }
 
     return {
@@ -119,6 +151,8 @@ export class ValidationService {
       errors,
       warnings,
       sanitizedSql,
+      requiresConfirmation,
+      destructiveOperations: detectedDestructiveOps.length > 0 ? detectedDestructiveOps : undefined,
     };
   }
 
@@ -132,9 +166,18 @@ export class ValidationService {
     // 끝에 세미콜론 제거
     sanitized = sanitized.replace(/;+$/, '');
 
-    // 다중 쿼리 방지 - 첫 번째 쿼리만 사용
-    const firstQuery = sanitized.split(';')[0];
+    const upperSql = sanitized.toUpperCase();
+    const isDDL = upperSql.startsWith('CREATE') || upperSql.startsWith('ALTER') || upperSql.startsWith('DROP');
+    const isDML = upperSql.startsWith('INSERT') || upperSql.startsWith('UPDATE') || upperSql.startsWith('DELETE');
 
+    // DDL/DML이면 다중 쿼리 허용 (세미콜론 유지)
+    if ((isDDL && this.allowDDL) || (isDML && this.allowWrites)) {
+      // 다중 쿼리 유지 - 마지막 세미콜론만 제거
+      return sanitized.trim();
+    }
+
+    // SELECT는 다중 쿼리 방지 - 첫 번째 쿼리만 사용
+    const firstQuery = sanitized.split(';')[0];
     return firstQuery.trim();
   }
 

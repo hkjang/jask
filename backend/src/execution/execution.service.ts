@@ -187,26 +187,73 @@ export class ExecutionService {
     timeout: number,
     startTime: number,
   ): Promise<ExecutionResult> {
-    // Oracle doesn't have session-level timeout, we use fetchArraySize for row limit
-    const result = await client.execute(sql, [], {
-      outFormat: oracledb.OUT_FORMAT_OBJECT,
-      maxRows: maxRows + 1, // +1 to detect truncation
-    });
+    const upperSql = sql.trim().toUpperCase();
+    const isSelect = upperSql.startsWith('SELECT') || upperSql.startsWith('WITH');
+    const isDDL = upperSql.startsWith('CREATE') || upperSql.startsWith('ALTER') || upperSql.startsWith('DROP') || upperSql.startsWith('TRUNCATE');
+    const isDML = upperSql.startsWith('INSERT') || upperSql.startsWith('UPDATE') || upperSql.startsWith('DELETE');
+
+    this.logger.log(`Oracle Execute - SQL Type: isSelect=${isSelect}, isDDL=${isDDL}, isDML=${isDML}, First20Chars="${upperSql.substring(0, 20)}"`);
+
+    let result: any;
+    
+    if (isSelect) {
+      // SELECT queries - fetch all rows
+      result = await client.execute(sql, [], {
+        outFormat: oracledb.OUT_FORMAT_OBJECT,
+      });
+    } else if (isDDL || isDML) {
+      // DDL/DML - handle multiple statements separated by semicolons
+      const statements = sql.split(';').map(s => s.trim()).filter(s => s.length > 0);
+      let totalRowsAffected = 0;
+      
+      for (const stmt of statements) {
+        const stmtResult = await client.execute(stmt, [], {
+          autoCommit: true,
+        });
+        totalRowsAffected += stmtResult.rowsAffected || 0;
+      }
+      
+      result = { 
+        rowsAffected: totalRowsAffected,
+        statementsExecuted: statements.length 
+      };
+    } else {
+      // Other statements
+      result = await client.execute(sql, [], {
+        autoCommit: true,
+      });
+    }
 
     const executionTime = Date.now() - startTime;
-    const rows = result.rows || [];
-    const truncated = rows.length > maxRows;
-
-    return {
-      rows: rows.slice(0, maxRows),
-      rowCount: rows.length,
-      fields: result.metaData?.map((m: any) => ({
-        name: m.name,
-        type: this.mapOracleType(m.dbType),
-      })) || [],
-      executionTime,
-      truncated,
-    };
+    
+    if (isSelect) {
+      const rows = result.rows || [];
+      const truncated = rows.length > maxRows;
+      return {
+        rows: rows.slice(0, maxRows),
+        rowCount: rows.length,
+        fields: result.metaData?.map((m: any) => ({
+          name: m.name,
+          type: this.mapOracleType(m.dbType),
+        })) || [],
+        executionTime,
+        truncated,
+      };
+    } else {
+      // DDL/DML result
+      const stmtCount = result.statementsExecuted || 1;
+      const rowsAffected = result.rowsAffected || 0;
+      
+      return {
+        rows: isDDL 
+          ? [{ message: `DDL 명령이 성공적으로 실행되었습니다. (${stmtCount}개 문장)` }]
+          : [{ message: `${rowsAffected}개의 행이 영향받았습니다. (${stmtCount}개 문장 실행)` }],
+        rowCount: rowsAffected || (isDDL ? stmtCount : 0),
+        fields: [{ name: 'message', type: 'varchar2' }],
+        executionTime,
+        truncated: false,
+      };
+    }
   }
 
   private mapPgType(typeId: number): string {

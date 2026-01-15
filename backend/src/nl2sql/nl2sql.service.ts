@@ -42,21 +42,46 @@ export class NL2SQLService {
 
     yield { type: 'step_start', step: 'schema', message: '스키마 컨텍스트 조회 (Vector Search) 중...' };
     
-    // Use Vector Search for scalable schema retrieval
-    const schemaContext = await this.metadataService.searchSchemaContext(dataSourceId, question);
-    if (!schemaContext || schemaContext.trim() === '') {
-      throw new BadRequestException('데이터소스의 메타데이터를 먼저 동기화해주세요.');
-    }
-
-    // Fetch DataSource to determine type
+    // Fetch DataSource to determine type first
     const dataSource = await this.prisma.dataSource.findUnique({
       where: { id: dataSourceId },
     });
     const dbType = dataSource?.type || 'postgresql';
+
+    // Check if DDL is allowed
+    const sqlSettings = await this.prisma.systemSettings.findMany({
+      where: { key: { in: ['sql_allow_ddl', 'sql_allow_writes'] } }
+    });
+    const allowDDL = sqlSettings.find(s => s.key === 'sql_allow_ddl')?.value === true;
+    
+    // Use Vector Search for scalable schema retrieval
+    let schemaContext = await this.metadataService.searchSchemaContext(dataSourceId, question);
+    
+    // If schema is empty but DDL is allowed, provide minimal context for DDL queries
+    if (!schemaContext || schemaContext.trim() === '') {
+      if (allowDDL) {
+        // Provide minimal context for DDL operations
+        schemaContext = `Database: ${dataSource?.database || 'unknown'}
+Schema: ${dataSource?.schema || 'default'}
+Type: ${dbType}
+Note: This database currently has no tables. You can create new tables.`;
+        yield { type: 'step_info', message: '테이블이 없는 빈 데이터베이스입니다. DDL 명령으로 테이블을 생성할 수 있습니다.' };
+      } else {
+        throw new BadRequestException('데이터소스의 메타데이터를 먼저 동기화해주세요.');
+      }
+    }
     
     let dbSpecificRules = '';
     if (dbType.toLowerCase().includes('postgres')) {
       dbSpecificRules = '6. You MUST wrap ALL table and column names in DOUBLE QUOTES (e.g. "TableName", "rowCount", "userId"). PostgreSQL is case-sensitive for mixed-case identifiers. Do NOT use unquoted camelCase.';
+    } else if (dbType.toLowerCase().includes('oracle')) {
+      dbSpecificRules = `6. For Oracle database:
+- Use VARCHAR2 instead of VARCHAR
+- Use NUMBER instead of INT/INTEGER  
+- Use CLOB instead of TEXT
+- Use DATE or TIMESTAMP for dates
+- Use SYSDATE for current timestamp
+- Table and column names should be UPPERCASE or wrapped in double quotes`;
     } else if (dbType.toLowerCase().includes('mysql') || dbType.toLowerCase().includes('mariadb')) {
       dbSpecificRules = '6. You MUST wrap all table and column names in BACKTICKS (e.g. `TableName`, `ColumnName`).';
     }
@@ -94,14 +119,50 @@ export class NL2SQLService {
       // 3. SQL 생성 (Streaming)
       yield { type: 'step_start', step: 'sql_generation', message: 'SQL 생성 중...' };
       
-      const sqlSystemPrompt = `You are an expert SQL query generator. Generate only valid SQL queries based on the user's natural language question and the provided database schema.
+    // Fetch SQL settings for DDL/DML permission
+    const sqlSettings = await this.prisma.systemSettings.findMany({
+      where: { key: { in: ['sql_allow_ddl', 'sql_allow_writes'] } }
+    });
+    const allowDDL = sqlSettings.find(s => s.key === 'sql_allow_ddl')?.value === true;
+    const allowWrites = sqlSettings.find(s => s.key === 'sql_allow_writes')?.value === true;
+
+    let sqlRules = '';
+    if (allowDDL && allowWrites) {
+      sqlRules = `1. You can generate SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER statements
+2. For table creation, use appropriate syntax for the database type (Oracle uses VARCHAR2, NUMBER, DATE, etc.)`;
+    } else if (allowDDL) {
+      sqlRules = `1. You can generate SELECT, CREATE, ALTER statements
+2. Do NOT generate INSERT, UPDATE, DELETE statements
+3. For table creation, use appropriate syntax for the database type`;
+    } else if (allowWrites) {
+      sqlRules = `1. You can generate SELECT, INSERT, UPDATE, DELETE statements
+2. Do NOT generate CREATE, ALTER, DROP statements`;
+    } else {
+      sqlRules = `1. Only generate SELECT queries
+2. Never use DELETE, UPDATE, INSERT, DROP, TRUNCATE, ALTER, CREATE`;
+    }
+
+    const sqlSystemPrompt = `You are an expert SQL query generator. Generate only valid SQL queries based on the user's natural language question and the provided database schema.
 Rules:
-1. Only generate SELECT queries
-2. Never use DELETE, UPDATE, INSERT, DROP, TRUNCATE, ALTER
-3. Always include LIMIT clause (max 1000)
+${sqlRules}
+3. Always include LIMIT clause for SELECT queries (max 1000)
 4. Return ONLY the SQL query, no explanations
 5. If the question refers to previous context, use the conversation history to infer the correct query.
 ${dbSpecificRules}
+
+For Oracle database specifically:
+- Use VARCHAR2 instead of VARCHAR
+- Use NUMBER instead of INT/INTEGER
+- Use CLOB instead of TEXT
+- Use appropriate Oracle date functions (SYSDATE, TO_DATE, etc.)
+- Use sequences or identity columns for auto-increment
+- NEVER use LIMIT clause - Oracle does not support it
+- For row limiting, use: FETCH FIRST N ROWS ONLY (Oracle 12c+) or WHERE ROWNUM <= N
+- For table list queries, use: SELECT TABLE_NAME FROM ALL_TABLES WHERE OWNER = 'SCHEMA_NAME'
+- For column info, use: SELECT COLUMN_NAME, DATA_TYPE FROM ALL_TAB_COLUMNS WHERE TABLE_NAME = 'TABLE_NAME'
+- Oracle system views: ALL_TABLES, ALL_TAB_COLUMNS, ALL_CONSTRAINTS (NOT information_schema)
+- Oracle does NOT have information_schema - never use it
+
 Database Schema:
 ${schemaContext}`;
 
