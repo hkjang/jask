@@ -103,8 +103,10 @@ export class LLMService {
 
     if (provider.name === 'ollama') {
       yield* this.ollamaProvider.generateStream(request, providerConfig);
+    } else if (provider.name === 'vllm') {
+      yield* this.vllmProvider.generateStream(request, providerConfig);
     } else {
-      // Fallback for non-streaming providers (like VLLM for now)
+      // Fallback for unsupported providers: use non-streaming
       const response = await this.generate(request, providerId);
       yield { type: 'content', content: response.content };
       if (response.usage) {
@@ -144,7 +146,6 @@ ${schemaContext}`;
       maxTokens: 2048,
     });
 
-    return this.extractSQL(response.content);
     return this.extractSQL(response.content);
   }
 
