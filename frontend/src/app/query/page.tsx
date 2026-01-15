@@ -859,7 +859,7 @@ function QueryPageContent() {
                 </div>
               )}
 
-              <div className={`max-w-[80%] min-w-0 overflow-hidden ${message.role === 'user' ? 'order-first' : ''}`}>
+              <div className={`max-w-[80%] min-w-0 ${message.role === 'user' ? 'order-first' : ''}`}>
                 {message.role === 'user' ? (
                   <div className="group relative">
                     <div className="bg-primary text-primary-foreground rounded-2xl rounded-tr-sm px-4 py-2.5 pr-10">
@@ -902,23 +902,28 @@ function QueryPageContent() {
                         </div>
                       </div>
                     ) : message.isLoading && message.content ? (
-                      <div className="bg-muted rounded-2xl rounded-tl-sm px-4 py-3 text-sm break-words overflow-hidden">
+                      <div className="bg-muted rounded-2xl rounded-tl-sm px-4 py-3 text-sm break-words overflow-hidden w-full max-w-full">
                         <div className="flex items-center gap-2 mb-2 pb-2 border-b border-border/50">
                           <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
                           <span className="text-xs text-primary font-medium">실시간 스트리밍...</span>
                         </div>
-                        <ReactMarkdown
-                          remarkPlugins={[remarkGfm]}
-                          rehypePlugins={[rehypeRaw]}
-                          components={{
-                            code: ({ node, className, children, ...props }: any) => (
-                              <code className="relative rounded bg-background px-[0.3rem] py-[0.2rem] font-mono text-sm font-semibold" {...props}>{children}</code>
-                            ),
-                            p: ({ node, ...props }) => <p className="whitespace-pre-wrap mb-2 last:mb-0" {...props} />,
-                          }}
-                        >
-                          {message.content}
-                        </ReactMarkdown>
+                        <div className="overflow-x-auto">
+                          <ReactMarkdown
+                            remarkPlugins={[remarkGfm]}
+                            rehypePlugins={[rehypeRaw]}
+                            components={{
+                              pre: ({ node, ...props }) => (
+                                <pre className="overflow-x-auto max-w-full" {...props} />
+                              ),
+                              code: ({ node, className, children, ...props }: any) => (
+                                <code className="relative rounded bg-background px-[0.3rem] py-[0.2rem] font-mono text-sm font-semibold break-all" {...props}>{children}</code>
+                              ),
+                              p: ({ node, ...props }) => <p className="whitespace-pre-wrap mb-2 last:mb-0 break-words" {...props} />,
+                            }}
+                          >
+                            {message.content}
+                          </ReactMarkdown>
+                        </div>
                       </div>
                     ) : (
                       <>
@@ -927,7 +932,7 @@ function QueryPageContent() {
                             <p className="text-sm">{message.error}</p>
                           </div>
                         ) : (
-                          <div className="bg-muted rounded-2xl rounded-tl-sm px-4 py-3 text-sm break-words overflow-hidden">
+                          <div className="bg-muted rounded-2xl rounded-tl-sm px-4 py-3 text-sm break-words overflow-hidden w-full">
                             <ReactMarkdown
                               remarkPlugins={[remarkGfm]}
                               rehypePlugins={[rehypeRaw]}
@@ -988,8 +993,8 @@ function QueryPageContent() {
                         )}
 
                         {message.sql && (
-                          <Card className="overflow-hidden">
-                            <div className="bg-zinc-900 text-zinc-100 p-4">
+                          <Card className="overflow-hidden w-full">
+                            <div className="bg-zinc-900 text-zinc-100 p-4 overflow-x-auto">
                               <div className="flex items-center justify-between mb-2">
                                 <div className="flex items-center gap-2">
                                     <span className="text-xs text-zinc-400">Generated SQL</span>
