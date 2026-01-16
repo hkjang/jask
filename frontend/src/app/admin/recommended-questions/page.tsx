@@ -284,7 +284,8 @@ export default function AdminRecommendedQuestionsPage() {
   };
 
   const handleBulkDelete = async () => {
-    for (const id of selectedIds) {
+    const ids = Array.from(selectedIds);
+    for (const id of ids) {
       await deleteMutation.mutateAsync(id);
     }
     setSelectedIds(new Set());
@@ -292,7 +293,8 @@ export default function AdminRecommendedQuestionsPage() {
   };
 
   const handleBulkToggle = async (active: boolean) => {
-    for (const id of selectedIds) {
+    const ids = Array.from(selectedIds);
+    for (const id of ids) {
       await api.updateAdminRecommendedQuestion(id, { isActive: active });
     }
     queryClient.invalidateQueries({ queryKey: ['adminRecommendedQuestions'] });

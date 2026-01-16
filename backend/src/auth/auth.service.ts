@@ -1,17 +1,19 @@
-import { Injectable, UnauthorizedException, ConflictException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, ConflictException, Inject, forwardRef } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 import { LoginDto, RegisterDto } from './dto/auth.dto';
+import { AuditService } from '../audit/audit.service';
 
 @Injectable()
 export class AuthService {
   constructor(
     private prisma: PrismaService,
     private jwtService: JwtService,
+    private auditService: AuditService,
   ) {}
 
-  async register(dto: RegisterDto) {
+  async register(dto: RegisterDto, ipAddress?: string, userAgent?: string) {
     const existingUser = await this.prisma.user.findUnique({
       where: { email: dto.email },
     });
@@ -33,6 +35,16 @@ export class AuthService {
 
     const token = this.generateToken(user.id, user.email, user.role);
 
+    // 감사 로그: 회원가입
+    await this.auditService.logUserManagement('CREATE', `새 사용자 등록: ${user.email}`, {
+      userId: user.id,
+      userEmail: user.email,
+      userName: user.name,
+      ipAddress,
+      userAgent,
+      metadata: { role: user.role },
+    });
+
     return {
       user: {
         id: user.id,
@@ -44,21 +56,64 @@ export class AuthService {
     };
   }
 
-  async login(dto: LoginDto) {
+  async login(dto: LoginDto, ipAddress?: string, userAgent?: string) {
     const user = await this.prisma.user.findUnique({
       where: { email: dto.email },
     });
 
-    if (!user || !user.isActive) {
+    if (!user) {
+      // 감사 로그: 존재하지 않는 사용자 로그인 시도
+      await this.auditService.logAuth('FAILED', `로그인 실패: 존재하지 않는 사용자 (${dto.email})`, {
+        userEmail: dto.email,
+        ipAddress,
+        userAgent,
+        success: false,
+        errorMessage: '존재하지 않는 사용자',
+      });
+      throw new UnauthorizedException('이메일 또는 비밀번호가 올바르지 않습니다.');
+    }
+
+    if (!user.isActive) {
+      // 감사 로그: 비활성화된 사용자 로그인 시도
+      await this.auditService.logAuth('FAILED', `로그인 실패: 비활성화된 사용자 (${dto.email})`, {
+        userId: user.id,
+        userEmail: dto.email,
+        userName: user.name,
+        ipAddress,
+        userAgent,
+        success: false,
+        errorMessage: '비활성화된 사용자',
+      });
       throw new UnauthorizedException('이메일 또는 비밀번호가 올바르지 않습니다.');
     }
 
     const isPasswordValid = await bcrypt.compare(dto.password, user.password);
     if (!isPasswordValid) {
+      // 감사 로그: 잘못된 비밀번호
+      await this.auditService.logAuth('FAILED', `로그인 실패: 잘못된 비밀번호 (${dto.email})`, {
+        userId: user.id,
+        userEmail: dto.email,
+        userName: user.name,
+        ipAddress,
+        userAgent,
+        success: false,
+        errorMessage: '잘못된 비밀번호',
+      });
       throw new UnauthorizedException('이메일 또는 비밀번호가 올바르지 않습니다.');
     }
 
     const token = this.generateToken(user.id, user.email, user.role);
+
+    // 감사 로그: 로그인 성공
+    await this.auditService.logAuth('LOGIN', `로그인 성공: ${user.email}`, {
+      userId: user.id,
+      userEmail: user.email,
+      userName: user.name,
+      ipAddress,
+      userAgent,
+      success: true,
+      metadata: { role: user.role },
+    });
 
     return {
       user: {
@@ -69,6 +124,19 @@ export class AuthService {
       },
       accessToken: token,
     };
+  }
+
+  async logout(userId: string, userEmail: string, userName?: string, ipAddress?: string, userAgent?: string) {
+    // 감사 로그: 로그아웃
+    await this.auditService.logAuth('LOGOUT', `로그아웃: ${userEmail}`, {
+      userId,
+      userEmail,
+      userName,
+      ipAddress,
+      userAgent,
+      success: true,
+    });
+    return { success: true };
   }
 
   async validateUser(userId: string) {

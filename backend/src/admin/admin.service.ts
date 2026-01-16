@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { LLMService } from '../llm/llm.service';
+import { AuditService } from '../audit/audit.service';
 import * as bcrypt from 'bcrypt';
 
 @Injectable()
@@ -10,6 +11,7 @@ export class AdminService {
   constructor(
     private prisma: PrismaService,
     private llmService: LLMService,
+    private auditService: AuditService,
   ) {}
 
   // LLM 프로바이더 관리
@@ -100,19 +102,41 @@ export class AdminService {
     return { items, pagination: { page, limit, total } };
   }
 
-  async updateUserRole(userId: string, role: 'USER' | 'ADMIN') {
-    return this.prisma.user.update({
+  async updateUserRole(userId: string, role: 'USER' | 'ADMIN', auditContext?: { userId?: string; userEmail?: string; userName?: string; ipAddress?: string; userAgent?: string }) {
+    const prevUser = await this.prisma.user.findUnique({ where: { id: userId } });
+    const user = await this.prisma.user.update({
       where: { id: userId },
       data: { role },
     });
+
+    // 감사 로그: 역할 변경
+    await this.auditService.logUserManagement('ROLE_CHANGE', `사용자 역할 변경: ${user.email}`, {
+      ...auditContext,
+      metadata: { targetUserId: userId, targetEmail: user.email },
+      previousValue: { role: prevUser?.role },
+      newValue: { role },
+    });
+
+    return user;
   }
 
-  async toggleUserActive(userId: string) {
+  async toggleUserActive(userId: string, auditContext?: { userId?: string; userEmail?: string; userName?: string; ipAddress?: string; userAgent?: string }) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    return this.prisma.user.update({
+    const updatedUser = await this.prisma.user.update({
       where: { id: userId },
       data: { isActive: !user?.isActive },
     });
+
+    // 감사 로그: 사용자 활성화/비활성화
+    const action = updatedUser.isActive ? 'ACTIVATE' : 'DEACTIVATE';
+    await this.auditService.logUserManagement(action, `사용자 ${updatedUser.isActive ? '활성화' : '비활성화'}: ${updatedUser.email}`, {
+      ...auditContext,
+      metadata: { targetUserId: userId, targetEmail: updatedUser.email },
+      previousValue: { isActive: user?.isActive },
+      newValue: { isActive: updatedUser.isActive },
+    });
+
+    return updatedUser;
   }
 
   async getUser(userId: string) {
@@ -137,13 +161,13 @@ export class AdminService {
     name: string; 
     role?: 'USER' | 'ADMIN'; 
     department?: string;
-  }) {
+  }, auditContext?: { userId?: string; userEmail?: string; userName?: string; ipAddress?: string; userAgent?: string }) {
     // Hash password using bcrypt
     const hashedPassword = await bcrypt.hash(data.password, 10);
     
     const preferences = data.department ? { department: data.department } : {};
     
-    return this.prisma.user.create({
+    const user = await this.prisma.user.create({
       data: {
         email: data.email,
         password: hashedPassword,
@@ -160,6 +184,14 @@ export class AdminService {
         createdAt: true,
       },
     });
+
+    // 감사 로그: 사용자 생성
+    await this.auditService.logUserManagement('CREATE', `사용자 생성: ${user.email}`, {
+      ...auditContext,
+      metadata: { targetUserId: user.id, targetEmail: user.email, role: user.role },
+    });
+
+    return user;
   }
 
   async updateUser(userId: string, data: { name?: string; department?: string; email?: string }) {
@@ -189,10 +221,20 @@ export class AdminService {
     });
   }
 
-  async deleteUser(userId: string) {
+  async deleteUser(userId: string, auditContext?: { userId?: string; userEmail?: string; userName?: string; ipAddress?: string; userAgent?: string }) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    
     // Soft delete approach: just deactivate and anonymize
     // Or hard delete if preferred
-    return this.prisma.user.delete({ where: { id: userId } });
+    const result = await this.prisma.user.delete({ where: { id: userId } });
+
+    // 감사 로그: 사용자 삭제
+    await this.auditService.logUserManagement('DELETE', `사용자 삭제: ${user?.email}`, {
+      ...auditContext,
+      metadata: { targetUserId: userId, targetEmail: user?.email },
+    });
+
+    return result;
   }
 
   // 전체 대화 이력 (관리자용)

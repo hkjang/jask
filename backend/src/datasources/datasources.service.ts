@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
+import { AuditService } from '../audit/audit.service';
 import { 
   CreateDataSourceDto, 
   UpdateDataSourceDto, 
@@ -26,6 +27,7 @@ export class DataSourcesService {
   constructor(
     private prisma: PrismaService,
     private configService: ConfigService,
+    private auditService: AuditService,
   ) {}
 
   // 비밀번호 암호화
@@ -59,11 +61,11 @@ export class DataSourcesService {
     }
   }
 
-  async create(dto: CreateDataSourceDto) {
+  async create(dto: CreateDataSourceDto, auditContext?: { userId?: string; userEmail?: string; userName?: string; ipAddress?: string; userAgent?: string }) {
     // 연결 테스트
     await this.testConnection(dto);
 
-    return this.prisma.dataSource.create({
+    const dataSource = await this.prisma.dataSource.create({
       data: {
         name: dto.name,
         type: dto.type,
@@ -82,6 +84,16 @@ export class DataSourcesService {
         lastHealthCheck: new Date(),
       },
     });
+
+    // 감사 로그: 데이터소스 생성
+    await this.auditService.logDataSource('CREATE', `데이터소스 생성: ${dto.name}`, {
+      ...auditContext,
+      dataSourceId: dataSource.id,
+      dataSourceName: dto.name,
+      metadata: { type: dto.type, host: dto.host, database: dto.database },
+    });
+
+    return dataSource;
   }
 
   async findAll() {
@@ -133,8 +145,8 @@ export class DataSourcesService {
     return dataSource;
   }
 
-  async update(id: string, dto: UpdateDataSourceDto) {
-    await this.findOne(id);
+  async update(id: string, dto: UpdateDataSourceDto, auditContext?: { userId?: string; userEmail?: string; userName?: string; ipAddress?: string; userAgent?: string }) {
+    const prevDataSource = await this.findOne(id);
 
     if (dto.host || dto.port || dto.database || dto.username || dto.password) {
       await this.testConnection({ ...dto } as CreateDataSourceDto);
@@ -145,20 +157,30 @@ export class DataSourcesService {
       updateData.password = this.encrypt(dto.password);
     }
 
-    return this.prisma.dataSource.update({
+    const dataSource = await this.prisma.dataSource.update({
       where: { id },
       data: updateData,
     });
+
+    // 감사 로그: 데이터소스 수정
+    await this.auditService.logDataSource('UPDATE', `데이터소스 수정: ${dataSource.name}`, {
+      ...auditContext,
+      dataSourceId: id,
+      dataSourceName: dataSource.name,
+      previousValue: { name: prevDataSource.name, host: prevDataSource.host, database: prevDataSource.database },
+      newValue: { name: dataSource.name, host: dataSource.host, database: dataSource.database },
+    });
+
+    return dataSource;
   }
 
-  async remove(id: string) {
-    await this.findOne(id);
+  async remove(id: string, auditContext?: { userId?: string; userEmail?: string; userName?: string; ipAddress?: string; userAgent?: string }) {
+    const dataSource = await this.findOne(id);
 
     // 연결 캐시에서 제거
     const cached = this.connectionCache.get(id);
     if (cached) {
       try {
-        const dataSource = await this.prisma.dataSource.findUnique({ where: { id } });
         if (dataSource?.type === 'oracle') {
           await (cached as oracledb.Connection).close();
         } else if (dataSource?.type === 'mysql') {
@@ -172,10 +194,20 @@ export class DataSourcesService {
       this.connectionCache.delete(id);
     }
 
-    return this.prisma.dataSource.update({
+    const result = await this.prisma.dataSource.update({
       where: { id },
       data: { isActive: false },
     });
+
+    // 감사 로그: 데이터소스 삭제
+    await this.auditService.logDataSource('DELETE', `데이터소스 삭제: ${dataSource.name}`, {
+      ...auditContext,
+      dataSourceId: id,
+      dataSourceName: dataSource.name,
+      metadata: { type: dataSource.type, host: dataSource.host },
+    });
+
+    return result;
   }
 
   async testConnection(config: CreateDataSourceDto): Promise<boolean> {

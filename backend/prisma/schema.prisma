@@ -768,20 +768,84 @@ model PolicyAdjustmentLog {
 // 보안 감사 로그
 // ===========================================
 enum AuditActionType {
+  // DDL 작업
   DDL_CREATE
   DDL_ALTER
   DDL_DROP
   DDL_TRUNCATE
+  
+  // DML 작업
   DML_INSERT
   DML_UPDATE
   DML_DELETE
+  
+  // 쿼리 실행
   QUERY_EXECUTE
+  
+  // 인증
   AUTH_LOGIN
   AUTH_LOGOUT
   AUTH_FAILED
-  CONFIG_CHANGE
+  AUTH_PASSWORD_CHANGE
+  AUTH_PASSWORD_RESET
+  
+  // 권한 관리
+  PERMISSION_GRANT
+  PERMISSION_REVOKE
+  ROLE_CHANGE
+  USER_CREATE
+  USER_UPDATE
+  USER_DELETE
+  USER_ACTIVATE
+  USER_DEACTIVATE
+  
+  // 데이터 접근
+  SENSITIVE_DATA_ACCESS
+  BULK_DATA_ACCESS
   DATA_EXPORT
+  DATA_IMPORT
+  
+  // 시스템 이벤트
+  SYSTEM_STARTUP
+  SYSTEM_SHUTDOWN
+  BACKUP_CREATE
+  BACKUP_RESTORE
+  
+  // API 보안
+  API_KEY_CREATE
+  API_KEY_REVOKE
+  RATE_LIMIT_EXCEEDED
+  UNAUTHORIZED_ACCESS
+  
+  // 세션 관리
+  SESSION_TIMEOUT
+  SESSION_HIJACK_ATTEMPT
+  CONCURRENT_LOGIN
+  SESSION_TERMINATED
+  
+  // 설정 변경
+  CONFIG_CHANGE
+  DATASOURCE_CREATE
+  DATASOURCE_UPDATE
+  DATASOURCE_DELETE
+  
+  // 메타데이터
+  METADATA_VIEW
+  METADATA_MODIFY
+  SCHEMA_SYNC
+  
+  // 즐겨찾기
+  FAVORITE_CREATE
+  FAVORITE_DELETE
+  
+  // AI 관련
+  AI_QUERY_GENERATE
+  AI_MODEL_CHANGE
+  AI_PROMPT_MODIFY
+  
+  // 파괴적 작업
   DESTRUCTIVE_CONFIRM
+  DESTRUCTIVE_REJECT
 }
 
 enum AuditSeverity {
@@ -791,11 +855,29 @@ enum AuditSeverity {
   CRITICAL
 }
 
+enum AuditCategory {
+  AUTH          // 인증/권한
+  DATA          // 데이터 접근
+  ADMIN         // 관리 작업
+  SYSTEM        // 시스템 이벤트
+  AI            // AI 관련
+  QUERY         // 쿼리 실행
+  SECURITY      // 보안 이벤트
+}
+
+enum AlertStatus {
+  OPEN          // 미확인
+  ACKNOWLEDGED  // 확인됨
+  RESOLVED      // 해결됨
+  DISMISSED     // 무시됨
+}
+
 model AuditLog {
   id            String          @id @default(uuid())
   
   // 작업 정보
   actionType    AuditActionType
+  category      AuditCategory   @default(QUERY)
   severity      AuditSeverity   @default(INFO)
   description   String
   
@@ -806,7 +888,7 @@ model AuditLog {
   
   // 사용자 정보
   userId        String?
-  user          User?           @relation(fields: [userId], references: [id])
+  user          User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
   userEmail     String?
   userName      String?
   ipAddress     String?
@@ -818,20 +900,132 @@ model AuditLog {
   
   // 실행 결과
   success       Boolean         @default(true)
-  errorMessage  String?
+  errorMessage  String?         @db.Text
   executionTime Int?            // ms
+  
+  // 세션 및 요청 추적
+  sessionId     String?
+  session       AuditSession?   @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  requestId     String?         // 분산 트레이싱용
+  
+  // API 정보
+  apiEndpoint   String?
+  httpMethod    String?         // GET, POST, PUT, DELETE
+  
+  // 변경 전/후 값 추적
+  previousValue Json?
+  newValue      Json?
+  
+  // 클라이언트 정보
+  clientInfo    Json?           // { browser, os, device, version }
+  
+  // 지리 정보 (IP 기반)
+  geoInfo       Json?           // { country, city, region, lat, lon }
+  
+  // 위험도 점수
+  riskScore     Int             @default(0)  // 0-100
   
   // 메타데이터
   metadata      Json?
   
+  // 관련 보안 경고
+  securityAlerts SecurityAlert[]
+  
   createdAt     DateTime        @default(now())
   
   @@index([actionType])
+  @@index([category])
   @@index([severity])
   @@index([userId])
   @@index([dataSourceId])
   @@index([createdAt])
   @@index([success])
+  @@index([sessionId])
+  @@index([riskScore])
+  @@index([ipAddress])
+}
+
+// ===========================================
+// 감사 세션 (사용자 세션별 활동 그룹화)
+// ===========================================
+model AuditSession {
+  id            String    @id @default(uuid())
+  
+  // 사용자 정보
+  userId        String?
+  userEmail     String?
+  userName      String?
+  
+  // 세션 정보
+  ipAddress     String?
+  userAgent     String?
+  clientInfo    Json?
+  geoInfo       Json?
+  
+  // 세션 시간
+  startedAt     DateTime  @default(now())
+  endedAt       DateTime?
+  lastActivityAt DateTime @default(now())
+  
+  // 세션 통계
+  activityCount Int       @default(0)
+  riskScore     Int       @default(0)  // 세션 전체 위험도
+  
+  // 세션 상태
+  isActive      Boolean   @default(true)
+  terminatedReason String?
+  
+  // 관련 로그
+  logs          AuditLog[]
+  
+  @@index([userId])
+  @@index([startedAt])
+  @@index([isActive])
+  @@index([riskScore])
+}
+
+// ===========================================
+// 보안 경고
+// ===========================================
+model SecurityAlert {
+  id            String      @id @default(uuid())
+  
+  // 경고 정보
+  alertType     String      // BRUTE_FORCE, SUSPICIOUS_ACCESS, DATA_BREACH, etc.
+  title         String
+  description   String      @db.Text
+  severity      AuditSeverity @default(WARNING)
+  
+  // 상태
+  status        AlertStatus @default(OPEN)
+  
+  // 관련 감사 로그
+  auditLogId    String?
+  auditLog      AuditLog?   @relation(fields: [auditLogId], references: [id], onDelete: SetNull)
+  
+  // 관련 사용자
+  userId        String?
+  userEmail     String?
+  ipAddress     String?
+  
+  // 처리 정보
+  acknowledgedBy  String?
+  acknowledgedAt  DateTime?
+  resolvedBy      String?
+  resolvedAt      DateTime?
+  resolution      String?   @db.Text  // 해결 방법/메모
+  
+  // 메타데이터
+  metadata      Json?
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  @@index([alertType])
+  @@index([status])
+  @@index([severity])
+  @@index([userId])
+  @@index([createdAt])
 }
 
 // ===========================================

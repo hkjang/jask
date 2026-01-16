@@ -2,6 +2,7 @@ import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DataSourcesService } from '../datasources/datasources.service';
 import { ValidationService } from '../validation/validation.service';
+import { AuditService } from '../audit/audit.service';
 import { Client as PgClient } from 'pg';
 import * as mysql from 'mysql2/promise';
 import oracledb from 'oracledb';
@@ -30,6 +31,11 @@ export interface ExecutionOptions {
   maxRows?: number;
   timeout?: number;
   skipOnError?: boolean; // Continue executing remaining statements if one fails
+  userId?: string;
+  userEmail?: string;
+  userName?: string;
+  ipAddress?: string;
+  userAgent?: string;
 }
 
 @Injectable()
@@ -42,6 +48,7 @@ export class ExecutionService {
     private configService: ConfigService,
     private dataSourcesService: DataSourcesService,
     private validationService: ValidationService,
+    private auditService: AuditService,
   ) {
     this.defaultMaxRows = this.configService.get<number>('SQL_MAX_ROWS', 1000);
     this.defaultTimeout = this.configService.get<number>('SQL_TIMEOUT_MS', 30000);
@@ -60,31 +67,29 @@ export class ExecutionService {
       throw new BadRequestException(validation.errors.join(', '));
     }
 
-    // DDL/DML 감사 로깅
+    // DDL/DML/SELECT 타입 판별
     const upperSql = validation.sanitizedSql?.toUpperCase() || sql.toUpperCase();
     const isDDL = upperSql.startsWith('CREATE') || upperSql.startsWith('ALTER') || upperSql.startsWith('DROP') || upperSql.startsWith('TRUNCATE');
     const isDML = upperSql.startsWith('INSERT') || upperSql.startsWith('UPDATE') || upperSql.startsWith('DELETE');
+    const isSelect = upperSql.startsWith('SELECT') || upperSql.startsWith('WITH');
+    const operation = upperSql.split(/\s+/)[0];
     
-    if (isDDL || isDML) {
-      const sqlType = isDDL ? 'DDL' : 'DML';
-      const operation = upperSql.split(/\s+/)[0];
-      this.logger.warn(`[AUDIT] ${sqlType} 실행: ${operation} - DataSource: ${dataSourceId} - SQL: ${sql.substring(0, 100)}...`);
-      
-      if (validation.destructiveOperations?.length) {
-        this.logger.warn(`[AUDIT] ⚠️ 파괴적 명령 실행: ${validation.destructiveOperations.join(', ')}`);
-      }
-    }
+    // 테이블명 추출 시도
+    let tableName: string | undefined;
+    const fromMatch = sql.match(/(?:FROM|INTO|UPDATE|TABLE)\s+["']?(\w+)["']?/i);
+    if (fromMatch) tableName = fromMatch[1];
 
     const sanitizedSql = validation.sanitizedSql || sql;
-
     const { client, type } = await this.dataSourcesService.getConnection(dataSourceId);
     const dataSource = await this.dataSourcesService.findOne(dataSourceId);
     const maxRows = options.maxRows || this.defaultMaxRows;
     const timeout = options.timeout || this.defaultTimeout;
 
     try {
+      let result: ExecutionResult;
+
       if (dataSource.type === 'postgresql') {
-        return await this.executePostgreSQL(
+        result = await this.executePostgreSQL(
           client as PgClient,
           sanitizedSql,
           maxRows,
@@ -92,7 +97,7 @@ export class ExecutionService {
           startTime,
         );
       } else if (dataSource.type === 'mysql') {
-        return await this.executeMySQL(
+        result = await this.executeMySQL(
           client as mysql.Connection,
           sanitizedSql,
           maxRows,
@@ -100,7 +105,7 @@ export class ExecutionService {
           startTime,
         );
       } else if (dataSource.type === 'oracle') {
-        return await this.executeOracle(
+        result = await this.executeOracle(
           client as oracledb.Connection,
           sanitizedSql,
           maxRows,
@@ -108,11 +113,99 @@ export class ExecutionService {
           startTime,
           options,
         );
+      } else {
+        throw new BadRequestException(`지원하지 않는 데이터베이스 타입: ${dataSource.type}`);
       }
 
-      throw new BadRequestException(`지원하지 않는 데이터베이스 타입: ${dataSource.type}`);
+      // 성공 감사 로그
+      if (isDDL) {
+        await this.auditService.logDDL(operation as any, `DDL 실행: ${operation} ${tableName || ''}`, {
+          userId: options.userId,
+          userEmail: options.userEmail,
+          userName: options.userName,
+          ipAddress: options.ipAddress,
+          userAgent: options.userAgent,
+          dataSourceId,
+          dataSourceName: dataSource.name,
+          sqlQuery: sql,
+          tableName,
+          executionTime: result.executionTime,
+          success: true,
+          metadata: { destructiveOperations: validation.destructiveOperations },
+        });
+      } else if (isDML) {
+        await this.auditService.logDML(operation as any, `DML 실행: ${operation} ${tableName || ''}`, {
+          userId: options.userId,
+          userEmail: options.userEmail,
+          userName: options.userName,
+          ipAddress: options.ipAddress,
+          userAgent: options.userAgent,
+          dataSourceId,
+          dataSourceName: dataSource.name,
+          sqlQuery: sql,
+          tableName,
+          affectedRows: result.rowCount,
+          executionTime: result.executionTime,
+          success: true,
+        });
+      } else if (isSelect) {
+        // SELECT 쿼리는 대량 데이터 접근만 로깅
+        if (result.rowCount >= 1000) {
+          await this.auditService.logDataAccess('BULK_ACCESS', `대량 데이터 조회: ${result.rowCount}건`, {
+            userId: options.userId,
+            userEmail: options.userEmail,
+            userName: options.userName,
+            ipAddress: options.ipAddress,
+            userAgent: options.userAgent,
+            dataSourceId,
+            dataSourceName: dataSource.name,
+            sqlQuery: sql,
+            tableName,
+            affectedRows: result.rowCount,
+            executionTime: result.executionTime,
+            success: true,
+          });
+        }
+      }
+
+      return result;
     } catch (error) {
+      const executionTime = Date.now() - startTime;
       this.logger.error(`SQL 실행 실패: ${error.message}`);
+
+      // 실패 감사 로그
+      if (isDDL) {
+        await this.auditService.logDDL(operation as any, `DDL 실행 실패: ${operation}`, {
+          userId: options.userId,
+          userEmail: options.userEmail,
+          userName: options.userName,
+          ipAddress: options.ipAddress,
+          userAgent: options.userAgent,
+          dataSourceId,
+          dataSourceName: dataSource.name,
+          sqlQuery: sql,
+          tableName,
+          executionTime,
+          success: false,
+          errorMessage: this.formatError(error),
+        });
+      } else if (isDML) {
+        await this.auditService.logDML(operation as any, `DML 실행 실패: ${operation}`, {
+          userId: options.userId,
+          userEmail: options.userEmail,
+          userName: options.userName,
+          ipAddress: options.ipAddress,
+          userAgent: options.userAgent,
+          dataSourceId,
+          dataSourceName: dataSource.name,
+          sqlQuery: sql,
+          tableName,
+          executionTime,
+          success: false,
+          errorMessage: this.formatError(error),
+        });
+      }
+
       throw new BadRequestException(this.formatError(error));
     }
   }
