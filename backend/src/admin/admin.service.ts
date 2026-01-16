@@ -488,4 +488,138 @@ export class AdminService {
         affectedSamples: affectedQueries.slice(0, 5) 
     };
   }
+
+  // ==========================================
+  // 추천 질문 관리
+  // ==========================================
+  async getRecommendedQuestions(dataSourceId?: string) {
+    return this.prisma.recommendedQuestion.findMany({
+      where: dataSourceId ? { dataSourceId } : undefined,
+      orderBy: [{ displayOrder: 'asc' }, { createdAt: 'desc' }],
+      include: {
+        dataSource: { select: { id: true, name: true, type: true } },
+      },
+    });
+  }
+
+  async getRecommendedQuestion(id: string) {
+    return this.prisma.recommendedQuestion.findUnique({
+      where: { id },
+      include: {
+        dataSource: { select: { id: true, name: true, type: true } },
+      },
+    });
+  }
+
+  async createRecommendedQuestion(data: {
+    dataSourceId: string;
+    question: string;
+    category?: string;
+    tags?: string[];
+    description?: string;
+    isAIGenerated?: boolean;
+    createdById?: string;
+    createdByName?: string;
+    source?: string;
+  }) {
+    return this.prisma.recommendedQuestion.create({
+      data: {
+        dataSourceId: data.dataSourceId,
+        question: data.question,
+        category: data.category,
+        tags: data.tags || [],
+        description: data.description,
+        isAIGenerated: data.isAIGenerated || false,
+        createdById: data.createdById,
+        createdByName: data.createdByName,
+        source: data.source || 'ADMIN',
+      },
+    });
+  }
+
+  async updateRecommendedQuestion(id: string, data: Partial<{
+    question: string;
+    category: string;
+    tags: string[];
+    description: string;
+    isActive: boolean;
+    displayOrder: number;
+  }>) {
+    return this.prisma.recommendedQuestion.update({
+      where: { id },
+      data,
+    });
+  }
+
+  async deleteRecommendedQuestion(id: string) {
+    return this.prisma.recommendedQuestion.delete({ where: { id } });
+  }
+
+  async toggleRecommendedQuestion(id: string) {
+    const question = await this.prisma.recommendedQuestion.findUnique({ where: { id } });
+    if (!question) throw new Error('Recommended question not found');
+    
+    return this.prisma.recommendedQuestion.update({
+      where: { id },
+      data: { isActive: !question.isActive },
+    });
+  }
+
+  async generateAIRecommendedQuestions(dataSourceId: string, count: number = 5) {
+    // Get schema context for the data source
+    const tables = await this.prisma.tableMetadata.findMany({
+      where: { dataSourceId, isExcluded: false },
+      include: {
+        columns: {
+          where: { isExcluded: false },
+          select: { columnName: true, dataType: true, description: true },
+        },
+      },
+      take: 20,
+    });
+
+    if (tables.length === 0) {
+      return { generated: 0, questions: [] };
+    }
+
+    // Build schema context
+    const schemaContext = tables.map(t => {
+      const cols = t.columns.map(c => `${c.columnName} (${c.dataType})${c.description ? `: ${c.description}` : ''}`).join(', ');
+      return `Table: ${t.schemaName}.${t.tableName}${t.description ? ` - ${t.description}` : ''}\nColumns: ${cols}`;
+    }).join('\n\n');
+
+    // Generate questions using LLM
+    const questions = await this.llmService.generateRecommendedQuestions(schemaContext, count);
+
+    // Save generated questions
+    const savedQuestions = [];
+    for (const q of questions) {
+      try {
+        const saved = await this.prisma.recommendedQuestion.create({
+          data: {
+            dataSourceId,
+            question: q,
+            isAIGenerated: true,
+            isActive: true,
+            source: 'ADMIN',
+          },
+        });
+        savedQuestions.push(saved);
+      } catch (e) {
+        this.logger.warn(`Failed to save recommended question: ${e.message}`);
+      }
+    }
+
+    return { generated: savedQuestions.length, questions: savedQuestions };
+  }
+
+  async incrementRecommendedQuestionUseCount(id: string) {
+    return this.prisma.recommendedQuestion.update({
+      where: { id },
+      data: {
+        useCount: { increment: 1 },
+        lastUsedAt: new Date(),
+      },
+    });
+  }
 }

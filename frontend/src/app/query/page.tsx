@@ -391,6 +391,21 @@ function QueryPageContent() {
     retry: false,
   });
 
+  // Force regenerate AI recommendations
+  const [isForceRegenerating, setIsForceRegenerating] = useState(false);
+  const handleForceRegenerate = async () => {
+    setIsForceRegenerating(true);
+    try {
+      const newQuestions = await api.getRecommendedQuestions(selectedDataSource, true);
+      queryClient.setQueryData(['suggestedQuestions', selectedDataSource], newQuestions);
+      toast({ title: 'AI 추천 질문이 새로 생성되었습니다!' });
+    } catch (error) {
+      toast({ title: 'AI 생성 실패', variant: 'destructive' });
+    } finally {
+      setIsForceRegenerating(false);
+    }
+  };
+
   const generateMutation = useMutation({
     mutationFn: (question: string) =>
       api.generateQuery(selectedDataSource, question, true),
@@ -1359,15 +1374,36 @@ function QueryPageContent() {
                   <Sparkles className="h-4 w-4 text-yellow-500" />
                   AI 추천 질문
                 </h3>
-                <Button 
-                  variant="ghost" 
-                  size="sm" 
-                  className="h-6 w-6 p-0" 
-                  onClick={() => refetchSuggestions()}
-                  disabled={isSuggestionsLoading}
-                >
-                  <RefreshCw className={`h-3 w-3 ${isSuggestionsLoading ? 'animate-spin' : ''}`} />
-                </Button>
+                <div className="flex items-center gap-1">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        className="h-7 gap-1.5 text-xs"
+                        onClick={handleForceRegenerate}
+                        disabled={isForceRegenerating || isSuggestionsLoading}
+                      >
+                        {isForceRegenerating ? (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : (
+                          <Bot className="h-3 w-3" />
+                        )}
+                        새로 생성
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>AI로 추천 질문을 새로 생성합니다 (DB에 저장됨)</TooltipContent>
+                  </Tooltip>
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    className="h-6 w-6 p-0" 
+                    onClick={() => refetchSuggestions()}
+                    disabled={isSuggestionsLoading}
+                  >
+                    <RefreshCw className={`h-3 w-3 ${isSuggestionsLoading ? 'animate-spin' : ''}`} />
+                  </Button>
+                </div>
               </div>
               
               {isSuggestionsLoading ? (

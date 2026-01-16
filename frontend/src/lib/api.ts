@@ -260,9 +260,10 @@ class ApiClient {
     });
   }
 
-  async getRecommendedQuestions(dataSourceId: string): Promise<string[]> {
+  async getRecommendedQuestions(dataSourceId: string, forceRegenerate?: boolean): Promise<string[]> {
     return this.request<string[]>(`/nl2sql/recommend/${dataSourceId}`, {
-      method: 'POST', // Using POST as it triggers generation
+      method: 'POST',
+      body: { forceRegenerate },
     });
   }
 
@@ -424,6 +425,42 @@ class ApiClient {
   async deletePolicy(id: string) {
     return this.request(`/admin/policies/${id}`, { method: 'DELETE' });
   }
+
+  // Recommended Questions Management
+  async getAdminRecommendedQuestions(dataSourceId?: string) {
+    const query = dataSourceId ? `?dataSourceId=${dataSourceId}` : '';
+    return this.request<any[]>(`/admin/recommended-questions${query}`);
+  }
+
+  async createAdminRecommendedQuestion(data: {
+    dataSourceId: string;
+    question: string;
+    category?: string;
+    tags?: string[];
+    description?: string;
+  }) {
+    return this.request('/admin/recommended-questions', { method: 'POST', body: data });
+  }
+
+  async updateAdminRecommendedQuestion(id: string, data: any) {
+    return this.request(`/admin/recommended-questions/${id}`, { method: 'PUT', body: data });
+  }
+
+  async deleteAdminRecommendedQuestion(id: string) {
+    return this.request(`/admin/recommended-questions/${id}`, { method: 'DELETE' });
+  }
+
+  async toggleAdminRecommendedQuestion(id: string) {
+    return this.request(`/admin/recommended-questions/${id}/toggle`, { method: 'PUT' });
+  }
+
+  async generateAIRecommendedQuestions(dataSourceId: string, count?: number) {
+    return this.request<{ generated: number; questions: any[] }>(
+      '/admin/recommended-questions/generate',
+      { method: 'POST', body: { dataSourceId, count } }
+    );
+  }
+
 
   // Evolution
   async getEvolutionCandidates(): Promise<any[]> {

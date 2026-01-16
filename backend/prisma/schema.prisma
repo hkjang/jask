@@ -94,6 +94,7 @@ model DataSource {
   tables      TableMetadata[]
   queries     QueryHistory[]
   samples     SampleQuery[]
+  recommendedQuestions RecommendedQuestion[]
 }
 
 // ===========================================
@@ -831,4 +832,41 @@ model AuditLog {
   @@index([dataSourceId])
   @@index([createdAt])
   @@index([success])
+}
+
+// ===========================================
+// 추천 질문 관리
+// ===========================================
+model RecommendedQuestion {
+  id           String   @id @default(uuid())
+  dataSourceId String
+  dataSource   DataSource @relation(fields: [dataSourceId], references: [id], onDelete: Cascade)
+  
+  question     String   @db.Text
+  category     String?
+  tags         String[] @default([])
+  description  String?  @db.Text
+  
+  isActive     Boolean  @default(true)
+  displayOrder Int      @default(0)
+  
+  // AI 생성 여부
+  isAIGenerated Boolean @default(false)
+  
+  // 생성자 정보
+  createdById   String?
+  createdByName String?
+  source        String   @default("ADMIN") // ADMIN | QUERY_PAGE | SYSTEM
+  
+  // 사용 통계
+  useCount     Int      @default(0)
+  lastUsedAt   DateTime?
+  
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  
+  @@index([dataSourceId])
+  @@index([isActive])
+  @@index([createdById])
+  @@index([source])
 }

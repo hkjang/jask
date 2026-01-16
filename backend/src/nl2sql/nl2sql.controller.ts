@@ -74,9 +74,18 @@ export class NL2SQLController {
   }
 
   @Post('recommend/:dataSourceId')
-  @ApiOperation({ summary: 'AI 추천 질문 생성' })
-  async recommend(@Param('dataSourceId') dataSourceId: string) {
-    return this.nl2sqlService.getRecommendedQuestions(dataSourceId);
+  @ApiOperation({ summary: 'AI 추천 질문 생성 (DB에 자동 저장)' })
+  async recommend(
+    @Param('dataSourceId') dataSourceId: string,
+    @Body() body: { forceRegenerate?: boolean },
+    @Request() req: any
+  ) {
+    return this.nl2sqlService.getRecommendedQuestions(
+      dataSourceId,
+      req.user?.id,
+      req.user?.name || req.user?.email,
+      body?.forceRegenerate
+    );
   }
 
   @Post('simulate/:dataSourceId')

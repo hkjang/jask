@@ -212,4 +212,57 @@ export class AdminController {
   simulatePolicy(@Body() body: { config: any }) {
     return this.adminService.simulatePolicy(body.config);
   }
+
+  // ==========================================
+  // 추천 질문 관리
+  // ==========================================
+  @Get('recommended-questions')
+  @ApiOperation({ summary: '추천 질문 목록' })
+  getRecommendedQuestions(@Query('dataSourceId') dataSourceId?: string) {
+    return this.adminService.getRecommendedQuestions(dataSourceId);
+  }
+
+  @Get('recommended-questions/:id')
+  @ApiOperation({ summary: '추천 질문 상세 조회' })
+  getRecommendedQuestion(@Param('id') id: string) {
+    return this.adminService.getRecommendedQuestion(id);
+  }
+
+  @Post('recommended-questions')
+  @ApiOperation({ summary: '추천 질문 생성' })
+  createRecommendedQuestion(@Body() body: {
+    dataSourceId: string;
+    question: string;
+    category?: string;
+    tags?: string[];
+    description?: string;
+  }) {
+    return this.adminService.createRecommendedQuestion(body);
+  }
+
+  @Put('recommended-questions/:id')
+  @ApiOperation({ summary: '추천 질문 수정' })
+  updateRecommendedQuestion(@Param('id') id: string, @Body() body: any) {
+    return this.adminService.updateRecommendedQuestion(id, body);
+  }
+
+  @Delete('recommended-questions/:id')
+  @ApiOperation({ summary: '추천 질문 삭제' })
+  deleteRecommendedQuestion(@Param('id') id: string) {
+    return this.adminService.deleteRecommendedQuestion(id);
+  }
+
+  @Put('recommended-questions/:id/toggle')
+  @ApiOperation({ summary: '추천 질문 활성화/비활성화 토글' })
+  toggleRecommendedQuestion(@Param('id') id: string) {
+    return this.adminService.toggleRecommendedQuestion(id);
+  }
+
+  @Post('recommended-questions/generate')
+  @ApiOperation({ summary: 'AI로 추천 질문 생성' })
+  generateAIRecommendedQuestions(
+    @Body() body: { dataSourceId: string; count?: number }
+  ) {
+    return this.adminService.generateAIRecommendedQuestions(body.dataSourceId, body.count);
+  }
 }

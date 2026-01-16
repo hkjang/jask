@@ -42,6 +42,7 @@ const adminItems = [
   { href: '/admin/users', icon: Users, label: '사용자 관리' },
   { href: '/admin/settings', icon: Settings, label: '설정' },
   { href: '/admin/sample-queries', icon: FileText, label: '샘플 쿼리' },
+  { href: '/admin/recommended-questions', icon: Sparkles, label: '추천 질문' },
   { href: '/admin/policies', icon: ShieldAlert, label: '정책 관리' },
   { href: '/admin/evolution', icon: Sparkles, label: 'AI 진화' },
   { href: '/admin/audit', icon: ShieldAlert, label: '감사 로그' },

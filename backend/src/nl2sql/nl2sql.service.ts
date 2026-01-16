@@ -755,11 +755,72 @@ ${schemaContext}`;
     });
   }
 
-  async getRecommendedQuestions(dataSourceId: string): Promise<string[]> {
+  async getRecommendedQuestions(
+    dataSourceId: string,
+    userId?: string,
+    userName?: string,
+    forceRegenerate?: boolean
+  ): Promise<string[]> {
+    // 1. 먼저 저장된 활성 질문이 있는지 확인
+    const savedQuestions = await this.prisma.recommendedQuestion.findMany({
+      where: { 
+        dataSourceId, 
+        isActive: true 
+      },
+      orderBy: [{ displayOrder: 'asc' }, { createdAt: 'desc' }],
+      take: 8,
+    });
+
+    // 강제 생성이 아니고 저장된 질문이 4개 이상이면 그것을 반환
+    if (!forceRegenerate && savedQuestions.length >= 4) {
+      return savedQuestions.slice(0, 4).map(q => q.question);
+    }
+
+    // 2. AI로 새로 생성 (forceRegenerate인 경우 항상, 아니면 질문이 부족할 때)
     const context = await this.metadataService.getReviewableSchemaContext(dataSourceId);
-    if (!context) return [];
+    if (!context) return savedQuestions.map(q => q.question);
     
-    return this.llmService.generateRecommendedQuestions(context, 4);
+    this.logger.log(`Generating AI recommended questions (force: ${forceRegenerate})`);
+    const generatedQuestions = await this.llmService.generateRecommendedQuestions(context, 4);
+
+    // 3. 생성된 질문을 DB에 저장 (중복 제외)
+    const existingQuestions = savedQuestions.map(q => q.question.toLowerCase());
+    
+    for (const question of generatedQuestions) {
+      // 중복 체크
+      if (existingQuestions.includes(question.toLowerCase())) {
+        continue;
+      }
+      
+      try {
+        await this.prisma.recommendedQuestion.create({
+          data: {
+            dataSourceId,
+            question,
+            isAIGenerated: true,
+            isActive: true,
+            source: 'QUERY_PAGE',
+            createdById: userId || null,
+            createdByName: userName || null,
+          },
+        });
+        this.logger.log(`Saved AI-generated question: ${question.substring(0, 50)}...`);
+      } catch (e) {
+        this.logger.warn(`Failed to save recommended question: ${e.message}`);
+      }
+    }
+
+    // 4. 강제 생성이면 새 질문만, 아니면 기존+새 질문을 합쳐서 반환
+    if (forceRegenerate) {
+      return generatedQuestions.slice(0, 4);
+    }
+
+    const allQuestions = [
+      ...savedQuestions.map(q => q.question),
+      ...generatedQuestions.filter(q => !existingQuestions.includes(q.toLowerCase()))
+    ];
+
+    return allQuestions.slice(0, 4);
   }
 
   // ===========================================
