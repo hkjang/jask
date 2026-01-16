@@ -657,6 +657,76 @@ class ApiClient {
   async deleteThread(id: string) {
     return this.request(`/threads/${id}`, { method: 'DELETE' });
   }
+
+  // ==========================================
+  // Admin Feedback Management
+  // ==========================================
+  async getAdminFeedbackList(options?: {
+    page?: number;
+    limit?: number;
+    feedback?: 'POSITIVE' | 'NEGATIVE';
+    dataSourceId?: string;
+    userId?: string;
+    startDate?: string;
+    endDate?: string;
+    search?: string;
+    hasNote?: boolean;
+  }) {
+    const params = new URLSearchParams();
+    if (options?.page) params.set('page', String(options.page));
+    if (options?.limit) params.set('limit', String(options.limit));
+    if (options?.feedback) params.set('feedback', options.feedback);
+    if (options?.dataSourceId) params.set('dataSourceId', options.dataSourceId);
+    if (options?.userId) params.set('userId', options.userId);
+    if (options?.startDate) params.set('startDate', options.startDate);
+    if (options?.endDate) params.set('endDate', options.endDate);
+    if (options?.search) params.set('search', options.search);
+    if (options?.hasNote !== undefined) params.set('hasNote', String(options.hasNote));
+    const query = params.toString();
+    return this.request<any>(`/admin/feedback${query ? `?${query}` : ''}`);
+  }
+
+  async getAdminFeedbackStats(options?: {
+    startDate?: string;
+    endDate?: string;
+    dataSourceId?: string;
+  }) {
+    const params = new URLSearchParams();
+    if (options?.startDate) params.set('startDate', options.startDate);
+    if (options?.endDate) params.set('endDate', options.endDate);
+    if (options?.dataSourceId) params.set('dataSourceId', options.dataSourceId);
+    const query = params.toString();
+    return this.request<any>(`/admin/feedback/stats${query ? `?${query}` : ''}`);
+  }
+
+  async getAdminFeedback(id: string) {
+    return this.request<any>(`/admin/feedback/${id}`);
+  }
+
+  async updateAdminFeedback(id: string, data: { feedbackNote?: string }) {
+    return this.request(`/admin/feedback/${id}`, { method: 'PUT', body: data });
+  }
+
+  async deleteAdminFeedback(id: string) {
+    return this.request(`/admin/feedback/${id}`, { method: 'DELETE' });
+  }
+
+  async deleteAdminFeedbackBulk(ids: string[]) {
+    return this.request('/admin/feedback/bulk-delete', { method: 'POST', body: { ids } });
+  }
+
+  async exportAdminFeedback(options?: {
+    feedback?: 'POSITIVE' | 'NEGATIVE';
+    dataSourceId?: string;
+    startDate?: string;
+    endDate?: string;
+  }) {
+    return this.request<{ filename: string; content: string; count: number }>(
+      '/admin/feedback/export',
+      { method: 'POST', body: options || {} }
+    );
+  }
 }
 
 export const api = new ApiClient();
+

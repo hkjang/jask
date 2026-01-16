@@ -664,4 +664,316 @@ export class AdminService {
       },
     });
   }
+
+  // ==========================================
+  // 피드백 관리 (Feedback Management)
+  // ==========================================
+
+  async getFeedbackList(options: {
+    page?: number;
+    limit?: number;
+    feedback?: 'POSITIVE' | 'NEGATIVE';
+    dataSourceId?: string;
+    userId?: string;
+    startDate?: Date;
+    endDate?: Date;
+    search?: string;
+    hasNote?: boolean;
+  }) {
+    const {
+      page = 1,
+      limit = 20,
+      feedback,
+      dataSourceId,
+      userId,
+      startDate,
+      endDate,
+      search,
+      hasNote,
+    } = options;
+
+    const where: any = {
+      feedback: { not: null }, // Only queries with feedback
+    };
+
+    if (feedback) where.feedback = feedback;
+    if (dataSourceId) where.dataSourceId = dataSourceId;
+    if (userId) where.userId = userId;
+    if (hasNote === true) where.feedbackNote = { not: null };
+    if (hasNote === false) where.feedbackNote = null;
+
+    if (startDate || endDate) {
+      where.createdAt = {};
+      if (startDate) where.createdAt.gte = startDate;
+      if (endDate) where.createdAt.lte = endDate;
+    }
+
+    if (search) {
+      where.OR = [
+        { naturalQuery: { contains: search, mode: 'insensitive' } },
+        { generatedSql: { contains: search, mode: 'insensitive' } },
+        { feedbackNote: { contains: search, mode: 'insensitive' } },
+      ];
+    }
+
+    const [items, total] = await Promise.all([
+      this.prisma.queryHistory.findMany({
+        where,
+        select: {
+          id: true,
+          naturalQuery: true,
+          generatedSql: true,
+          feedback: true,
+          feedbackNote: true,
+          status: true,
+          trustScore: true,
+          createdAt: true,
+          user: { select: { id: true, name: true, email: true } },
+          dataSource: { select: { id: true, name: true, type: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.queryHistory.count({ where }),
+    ]);
+
+    return {
+      items,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  async getFeedbackStats(options: {
+    startDate?: Date;
+    endDate?: Date;
+    dataSourceId?: string;
+  } = {}) {
+    const { startDate, endDate, dataSourceId } = options;
+
+    const baseWhere: any = {
+      feedback: { not: null },
+    };
+    if (dataSourceId) baseWhere.dataSourceId = dataSourceId;
+    if (startDate || endDate) {
+      baseWhere.createdAt = {};
+      if (startDate) baseWhere.createdAt.gte = startDate;
+      if (endDate) baseWhere.createdAt.lte = endDate;
+    }
+
+    // Overall stats
+    const [positive, negative, withNote, total] = await Promise.all([
+      this.prisma.queryHistory.count({ where: { ...baseWhere, feedback: 'POSITIVE' } }),
+      this.prisma.queryHistory.count({ where: { ...baseWhere, feedback: 'NEGATIVE' } }),
+      this.prisma.queryHistory.count({ where: { ...baseWhere, feedbackNote: { not: null } } }),
+      this.prisma.queryHistory.count({ where: baseWhere }),
+    ]);
+
+    // By data source
+    const byDataSource = await this.prisma.queryHistory.groupBy({
+      by: ['dataSourceId', 'feedback'],
+      where: baseWhere,
+      _count: true,
+    });
+
+    // Format data source stats
+    const dataSourceStats: Record<string, { positive: number; negative: number }> = {};
+    for (const item of byDataSource) {
+      if (!item.dataSourceId) continue;
+      if (!dataSourceStats[item.dataSourceId]) {
+        dataSourceStats[item.dataSourceId] = { positive: 0, negative: 0 };
+      }
+      if (item.feedback === 'POSITIVE') {
+        dataSourceStats[item.dataSourceId].positive = item._count;
+      } else if (item.feedback === 'NEGATIVE') {
+        dataSourceStats[item.dataSourceId].negative = item._count;
+      }
+    }
+
+    // Get data source names
+    const dataSourceIds = Object.keys(dataSourceStats);
+    const dataSources = await this.prisma.dataSource.findMany({
+      where: { id: { in: dataSourceIds } },
+      select: { id: true, name: true },
+    });
+    const dataSourceMap = dataSources.reduce((acc, ds) => {
+      acc[ds.id] = ds.name;
+      return acc;
+    }, {} as Record<string, string>);
+
+    // Daily trend (last 30 days) - simplified query without dynamic dataSourceId filter
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    let dailyFeedback: Array<{ date: Date; feedback: string; count: number }> = [];
+    try {
+      const rawResult = await this.prisma.$queryRaw<Array<{ date: Date; feedback: string; count: bigint }>>`
+        SELECT 
+          DATE("createdAt") as date,
+          "feedback",
+          COUNT(*)::int as count
+        FROM "QueryHistory"
+        WHERE "feedback" IS NOT NULL
+          AND "createdAt" >= ${thirtyDaysAgo}
+        GROUP BY DATE("createdAt"), "feedback"
+        ORDER BY date DESC
+        LIMIT 60
+      `;
+      dailyFeedback = rawResult.map(d => ({
+        date: d.date,
+        feedback: d.feedback,
+        count: Number(d.count),
+      }));
+    } catch (e) {
+      this.logger.warn(`Failed to fetch daily feedback trend: ${e.message}`);
+    }
+
+    // Top negative feedback users
+    const topNegativeUsers = await this.prisma.queryHistory.groupBy({
+      by: ['userId'],
+      where: { ...baseWhere, feedback: 'NEGATIVE' },
+      _count: true,
+      orderBy: { _count: { userId: 'desc' } },
+      take: 5,
+    });
+
+    const userIds = topNegativeUsers.map(u => u.userId);
+    const users = await this.prisma.user.findMany({
+      where: { id: { in: userIds } },
+      select: { id: true, name: true, email: true },
+    });
+    const userMap = users.reduce((acc, u) => {
+      acc[u.id] = { name: u.name, email: u.email };
+      return acc;
+    }, {} as Record<string, { name: string; email: string }>);
+
+    return {
+      summary: {
+        total,
+        positive,
+        negative,
+        withNote,
+        positiveRate: total > 0 ? ((positive / total) * 100).toFixed(1) : '0',
+      },
+      byDataSource: Object.entries(dataSourceStats).map(([id, stats]) => ({
+        id,
+        name: dataSourceMap[id] || 'Unknown',
+        ...stats,
+      })),
+      dailyTrend: dailyFeedback,
+      topNegativeUsers: topNegativeUsers.map(u => ({
+        userId: u.userId,
+        ...userMap[u.userId],
+        count: u._count,
+      })),
+    };
+  }
+
+  async getFeedbackById(id: string) {
+    return this.prisma.queryHistory.findUnique({
+      where: { id },
+      include: {
+        user: { select: { id: true, name: true, email: true } },
+        dataSource: { select: { id: true, name: true, type: true } },
+        comments: {
+          include: { user: { select: { id: true, name: true } } },
+          orderBy: { createdAt: 'asc' },
+        },
+      },
+    });
+  }
+
+  async updateFeedback(id: string, data: { feedbackNote?: string }) {
+    return this.prisma.queryHistory.update({
+      where: { id },
+      data: {
+        feedbackNote: data.feedbackNote,
+      },
+    });
+  }
+
+  async deleteFeedback(id: string) {
+    return this.prisma.queryHistory.update({
+      where: { id },
+      data: {
+        feedback: null,
+        feedbackNote: null,
+      },
+    });
+  }
+
+  async deleteFeedbackBulk(ids: string[]) {
+    return this.prisma.queryHistory.updateMany({
+      where: { id: { in: ids } },
+      data: {
+        feedback: null,
+        feedbackNote: null,
+      },
+    });
+  }
+
+  async exportFeedback(options: {
+    feedback?: 'POSITIVE' | 'NEGATIVE';
+    dataSourceId?: string;
+    startDate?: Date;
+    endDate?: Date;
+  }) {
+    const where: any = {
+      feedback: { not: null },
+    };
+
+    if (options.feedback) where.feedback = options.feedback;
+    if (options.dataSourceId) where.dataSourceId = options.dataSourceId;
+    if (options.startDate || options.endDate) {
+      where.createdAt = {};
+      if (options.startDate) where.createdAt.gte = options.startDate;
+      if (options.endDate) where.createdAt.lte = options.endDate;
+    }
+
+    const items = await this.prisma.queryHistory.findMany({
+      where,
+      select: {
+        id: true,
+        naturalQuery: true,
+        generatedSql: true,
+        feedback: true,
+        feedbackNote: true,
+        status: true,
+        trustScore: true,
+        createdAt: true,
+        user: { select: { name: true, email: true } },
+        dataSource: { select: { name: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    // Generate CSV content
+    const headers = ['ID', 'Date', 'User', 'Email', 'DataSource', 'Feedback', 'Question', 'SQL', 'Note', 'Trust Score', 'Status'];
+    const rows = items.map(item => [
+      item.id,
+      item.createdAt.toISOString(),
+      item.user?.name || '',
+      item.user?.email || '',
+      item.dataSource?.name || '',
+      item.feedback || '',
+      `"${(item.naturalQuery || '').replace(/"/g, '""')}"`,
+      `"${(item.generatedSql || '').replace(/"/g, '""')}"`,
+      `"${(item.feedbackNote || '').replace(/"/g, '""')}"`,
+      item.trustScore?.toFixed(2) || '',
+      item.status || '',
+    ]);
+
+    const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+
+    return {
+      filename: `feedback_export_${new Date().toISOString().split('T')[0]}.csv`,
+      content: csv,
+      count: items.length,
+    };
+  }
 }

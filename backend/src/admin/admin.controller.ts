@@ -265,4 +265,92 @@ export class AdminController {
   ) {
     return this.adminService.generateAIRecommendedQuestions(body.dataSourceId, body.count);
   }
+
+  // ==========================================
+  // 피드백 관리 (Feedback Management)
+  // ==========================================
+  @Get('feedback')
+  @ApiOperation({ summary: '피드백 목록 조회' })
+  getFeedbackList(
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('feedback') feedback?: 'POSITIVE' | 'NEGATIVE',
+    @Query('dataSourceId') dataSourceId?: string,
+    @Query('userId') userId?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+    @Query('search') search?: string,
+    @Query('hasNote') hasNote?: string,
+  ) {
+    return this.adminService.getFeedbackList({
+      page: page ? parseInt(page) : 1,
+      limit: limit ? parseInt(limit) : 20,
+      feedback,
+      dataSourceId,
+      userId,
+      startDate: startDate ? new Date(startDate) : undefined,
+      endDate: endDate ? new Date(endDate) : undefined,
+      search,
+      hasNote: hasNote === 'true' ? true : hasNote === 'false' ? false : undefined,
+    });
+  }
+
+  @Get('feedback/stats')
+  @ApiOperation({ summary: '피드백 통계' })
+  getFeedbackStats(
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+    @Query('dataSourceId') dataSourceId?: string,
+  ) {
+    return this.adminService.getFeedbackStats({
+      startDate: startDate ? new Date(startDate) : undefined,
+      endDate: endDate ? new Date(endDate) : undefined,
+      dataSourceId,
+    });
+  }
+
+  @Get('feedback/:id')
+  @ApiOperation({ summary: '피드백 상세 조회' })
+  getFeedbackById(@Param('id') id: string) {
+    return this.adminService.getFeedbackById(id);
+  }
+
+  @Put('feedback/:id')
+  @ApiOperation({ summary: '피드백 메모 수정' })
+  updateFeedback(
+    @Param('id') id: string,
+    @Body() body: { feedbackNote?: string },
+  ) {
+    return this.adminService.updateFeedback(id, body);
+  }
+
+  @Delete('feedback/:id')
+  @ApiOperation({ summary: '피드백 삭제' })
+  deleteFeedback(@Param('id') id: string) {
+    return this.adminService.deleteFeedback(id);
+  }
+
+  @Post('feedback/bulk-delete')
+  @ApiOperation({ summary: '피드백 일괄 삭제' })
+  deleteFeedbackBulk(@Body() body: { ids: string[] }) {
+    return this.adminService.deleteFeedbackBulk(body.ids);
+  }
+
+  @Post('feedback/export')
+  @ApiOperation({ summary: '피드백 CSV 내보내기' })
+  exportFeedback(
+    @Body() body: {
+      feedback?: 'POSITIVE' | 'NEGATIVE';
+      dataSourceId?: string;
+      startDate?: string;
+      endDate?: string;
+    },
+  ) {
+    return this.adminService.exportFeedback({
+      feedback: body.feedback,
+      dataSourceId: body.dataSourceId,
+      startDate: body.startDate ? new Date(body.startDate) : undefined,
+      endDate: body.endDate ? new Date(body.endDate) : undefined,
+    });
+  }
 }
