@@ -24,7 +24,7 @@ export function FeedbackDialog({ isOpen, onClose, onSubmit }: FeedbackDialogProp
 
   const handleSubmit = async () => {
     if (!reason.trim()) {
-      toast({ title: "Please provide a reason", variant: "destructive" });
+      toast({ title: "피드백 내용을 입력해주세요", variant: "destructive" });
       return;
     }
     
@@ -44,14 +44,14 @@ export function FeedbackDialog({ isOpen, onClose, onSubmit }: FeedbackDialogProp
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
-          <DialogTitle>Provide Feedback</DialogTitle>
+          <DialogTitle>피드백 제출</DialogTitle>
           <DialogDescription>
-            Help us improve by explaining what went wrong with this query.
+            이 쿼리에서 무엇이 잘못되었는지 알려주시면 서비스 개선에 도움이 됩니다.
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-4">
           <Textarea
-             placeholder="e.g., The SQL syntax is wrong, or it missed a filter condition..."
+             placeholder="예: SQL 문법이 잘못되었거나, 필터 조건이 누락되었습니다..."
              value={reason}
              onChange={(e) => setReason(e.target.value)}
              className="min-h-[100px]"
@@ -59,10 +59,10 @@ export function FeedbackDialog({ isOpen, onClose, onSubmit }: FeedbackDialogProp
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={loading}>
-            Cancel
+            취소
           </Button>
           <Button onClick={handleSubmit} disabled={loading}>
-            {loading ? "Submitting..." : "Submit Feedback"}
+            {loading ? "제출 중..." : "피드백 제출"}
           </Button>
         </DialogFooter>
       </DialogContent>

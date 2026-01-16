@@ -108,6 +108,8 @@ interface Message {
     riskLevel?: string;
   };
   feedback?: 'POSITIVE' | 'NEGATIVE';
+  favorited?: boolean;
+  favoriteId?: string;
 }
 
 
@@ -525,9 +527,13 @@ function QueryPageContent() {
   const addFavoriteMutation = useMutation({
     mutationFn: (data: { name: string; naturalQuery: string; sqlQuery: string; queryId?: string }) =>
       api.addFavorite(data),
-    onSuccess: (_, variables) => {
+    onSuccess: (response: any, variables) => {
       toast({ title: '즐겨찾기에 추가되었습니다 ⭐' });
+      // Mark the message as favorited and store the favorite id
       if (variables.queryId) {
+        setMessages(prev => prev.map(m => 
+          m.queryId === variables.queryId ? { ...m, favorited: true, favoriteId: response.id } : m
+        ));
         logAction(ActionType.SAVE, variables.queryId);
       }
     },
@@ -536,19 +542,46 @@ function QueryPageContent() {
     },
   });
 
+  const removeFavoriteMutation = useMutation({
+    mutationFn: (data: { favoriteId: string; queryId: string }) =>
+      api.removeFavorite(data.favoriteId),
+    onSuccess: (_, variables) => {
+      toast({ title: '즐겨찾기에서 삭제되었습니다' });
+      // Mark the message as not favorited
+      setMessages(prev => prev.map(m => 
+        m.queryId === variables.queryId ? { ...m, favorited: false, favoriteId: undefined } : m
+      ));
+    },
+    onError: () => {
+      toast({ title: '즐겨찾기 삭제 실패', variant: 'destructive' });
+    },
+  });
+
   // Feedback Handler
   const handleFeedback = async (queryId: string, type: 'POSITIVE' | 'NEGATIVE', note?: string) => {
     try {
-      // Optimistic Update
+      // Find current message to check existing feedback
+      const currentMessage = messages.find(m => m.queryId === queryId);
+      const isSameFeedback = currentMessage?.feedback === type;
+      
+      // Optimistic Update - toggle off if same feedback, otherwise set new feedback
       setMessages(prev => prev.map(m => 
-          m.queryId === queryId ? { ...m, feedback: type } : m
+          m.queryId === queryId ? { ...m, feedback: isSameFeedback ? undefined : type } : m
       ));
       
-      await api.post(`/query/${queryId}/feedback`, { feedback: type, note });
-      toast({ title: type === 'POSITIVE' ? "Thanks for your feedback!" : "Feedback submitted." });
-      logAction(ActionType.RATE, queryId, { rating: type, reason: note });
+      if (isSameFeedback) {
+        // Remove feedback
+        await api.post(`/query/${queryId}/feedback`, { feedback: null, note });
+        toast({ title: "피드백이 취소되었습니다" });
+      } else {
+        // Set new feedback
+        await api.post(`/query/${queryId}/feedback`, { feedback: type, note });
+        toast({ title: type === 'POSITIVE' ? "감사합니다! 👍" : "피드백이 제출되었습니다." });
+        logAction(ActionType.RATE, queryId, { rating: type, reason: note });
+      }
     } catch (e) {
-      toast({ title: "Failed to submit feedback", variant: "destructive" });
+      // Revert on error
+      toast({ title: "피드백 제출 실패", variant: "destructive" });
     }
   };
   
@@ -1135,21 +1168,29 @@ function QueryPageContent() {
                                   <Button
                                     variant="ghost"
                                     size="icon"
-                                    className="h-6 w-6 text-zinc-400 hover:text-yellow-400"
+                                    className={`h-6 w-6 ${message.favorited ? 'text-yellow-400' : 'text-zinc-400 hover:text-yellow-400'}`}
                                     onClick={() => {
-                                      // Find the user message for this response
-                                      const msgIndex = messages.findIndex(m => m.id === message.id);
-                                      const userMsg = messages.slice(0, msgIndex).reverse().find(m => m.role === 'user');
-                                      addFavoriteMutation.mutate({
-                                        name: userMsg?.content?.slice(0, 50) || 'My Query',
-                                        naturalQuery: userMsg?.content || '',
-                                        sqlQuery: message.sql!,
-                                        queryId: message.queryId,
-                                      });
+                                      if (message.favorited && message.favoriteId) {
+                                        // Remove from favorites
+                                        removeFavoriteMutation.mutate({
+                                          favoriteId: message.favoriteId,
+                                          queryId: message.queryId!,
+                                        });
+                                      } else {
+                                        // Add to favorites
+                                        const msgIndex = messages.findIndex(m => m.id === message.id);
+                                        const userMsg = messages.slice(0, msgIndex).reverse().find(m => m.role === 'user');
+                                        addFavoriteMutation.mutate({
+                                          name: userMsg?.content?.slice(0, 50) || 'My Query',
+                                          naturalQuery: userMsg?.content || '',
+                                          sqlQuery: message.sql!,
+                                          queryId: message.queryId,
+                                        });
+                                      }
                                     }}
-                                    title="즐겨찾기에 추가"
+                                    title={message.favorited ? '즐겨찾기에서 삭제' : '즐겨찾기에 추가'}
                                   >
-                                    <Star className="h-3 w-3" />
+                                    <Star className={`h-3 w-3 ${message.favorited ? 'fill-current' : ''}`} />
                                   </Button>
                                   
                                   {/* Feedback Buttons */}
