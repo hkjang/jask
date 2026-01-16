@@ -895,14 +895,24 @@ export class AuditService {
       }),
     ]);
 
+    // Convert BigInt to Number for JSON serialization
+    const byDayConverted = (byDay as any[]).map((d: any) => ({
+      date: d.date,
+      count: Number(d.count),
+    }));
+
     return {
-      byActionType,
-      bySeverity,
-      byCategory,
-      byDay,
+      byActionType: byActionType.map((a: any) => ({ ...a, _count: Number(a._count) })),
+      bySeverity: bySeverity.map((s: any) => ({ ...s, _count: Number(s._count) })),
+      byCategory: byCategory.map((c: any) => ({ ...c, _count: Number(c._count) })),
+      byDay: byDayConverted,
       recentCritical,
-      topRiskyUsers,
-      openAlerts,
+      topRiskyUsers: topRiskyUsers.map((u: any) => ({
+        ...u,
+        _count: Number(u._count),
+        _sum: { riskScore: Number(u._sum.riskScore || 0) },
+      })),
+      openAlerts: Number(openAlerts),
     };
   }
 
@@ -911,9 +921,9 @@ export class AuditService {
     startDate.setDate(startDate.getDate() - days);
 
     // 비정상 패턴 감지
-    const anomalies = {
+    const [bruteForceAttempts, afterHoursHighRisk, bulkDataAccess, permissionChanges] = await Promise.all([
       // 실패한 로그인 시도가 많은 IP
-      bruteForceAttempts: await this.prisma.auditLog.groupBy({
+      this.prisma.auditLog.groupBy({
         by: ['ipAddress'],
         _count: true,
         where: {
@@ -925,16 +935,15 @@ export class AuditService {
       }),
 
       // 업무 외 시간 고위험 활동
-      afterHoursHighRisk: await this.prisma.auditLog.count({
+      this.prisma.auditLog.count({
         where: {
           riskScore: { gte: 70 },
           createdAt: { gte: startDate },
-          // 실제 시간 필터는 raw query로 해야 하지만, 간단히 처리
         },
       }),
 
       // 대량 데이터 접근
-      bulkDataAccess: await this.prisma.auditLog.findMany({
+      this.prisma.auditLog.findMany({
         where: {
           actionType: { in: [AuditActionType.BULK_DATA_ACCESS, AuditActionType.DATA_EXPORT] },
           affectedRows: { gte: 1000 },
@@ -945,7 +954,7 @@ export class AuditService {
       }),
 
       // 권한 변경 이력
-      permissionChanges: await this.prisma.auditLog.findMany({
+      this.prisma.auditLog.findMany({
         where: {
           actionType: { in: [AuditActionType.PERMISSION_GRANT, AuditActionType.PERMISSION_REVOKE, AuditActionType.ROLE_CHANGE] },
           createdAt: { gte: startDate },
@@ -953,9 +962,17 @@ export class AuditService {
         orderBy: { createdAt: 'desc' },
         take: 20,
       }),
-    };
+    ]);
 
-    return anomalies;
+    return {
+      bruteForceAttempts: bruteForceAttempts.map((a: any) => ({
+        ...a,
+        _count: Number(a._count),
+      })),
+      afterHoursHighRisk: Number(afterHoursHighRisk),
+      bulkDataAccess,
+      permissionChanges,
+    };
   }
 
   // ===========================================
