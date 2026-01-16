@@ -1,5 +1,4 @@
 import { useCallback } from 'react';
-import { useSession } from 'next-auth/react';
 
 export enum ActionType {
   QUERY = 'QUERY',
@@ -12,17 +11,16 @@ export enum ActionType {
 }
 
 export function useUserAction() {
-  const { data: session } = useSession();
-
   const logAction = useCallback(async (actionType: ActionType, queryId?: string, payload?: any) => {
-    if (!session?.user) return;
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    if (!token) return;
 
     try {
       await fetch('/api/evolution/actions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${(session as any).accessToken}`, // Assuming access token handling
+          'Authorization': `Bearer ${token}`,
         },
         body: JSON.stringify({
           actionType,
@@ -33,7 +31,7 @@ export function useUserAction() {
     } catch (error) {
       console.error('Failed to log user action', error);
     }
-  }, [session]);
+  }, []);
 
   return { logAction };
 }

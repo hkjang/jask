@@ -60,15 +60,6 @@ export function TableSchemaViewer({
     staleTime: 1000 * 60 * 5, // 5분 캐시
   });
 
-  // 디버깅: API 응답 및 추출된 테이블명 확인
-  useEffect(() => {
-    if (open && allTables) {
-      console.log('[TableSchemaViewer] 추출된 테이블명:', tableNames);
-      console.log('[TableSchemaViewer] API 응답 테이블 수:', allTables.length);
-      console.log('[TableSchemaViewer] API 테이블명 목록:', allTables.map((t: TableInfo) => t.tableName));
-    }
-  }, [open, allTables, tableNames]);
-
   // SQL에 사용된 테이블만 필터링 (대소문자 무시, 스키마 포함 처리)
   const relevantTables = allTables?.filter((table: TableInfo) =>
     tableNames.some((name) => {
