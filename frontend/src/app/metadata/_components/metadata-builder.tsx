@@ -143,13 +143,17 @@ export function MetadataBuilder({ table, onUpdate }: MetadataBuilderProps) {
   };
 
   const handleDeleteColumn = async (col: any) => {
+    console.log('[DEBUG] handleDeleteColumn called with col:', col);
     if (!confirm(`"${col.columnName}" 컬럼을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.`)) return;
     try {
+      console.log('[DEBUG] Calling api.deleteColumn with id:', col.id);
       await api.deleteColumn(col.id);
+      console.log('[DEBUG] Column deleted successfully');
       setColumns(prev => prev.filter(c => c.id !== col.id));
       toast({ title: "삭제됨", description: `${col.columnName} 컬럼이 삭제되었습니다.` });
       onUpdate();
     } catch (e) {
+      console.error('[DEBUG] Delete column error:', e);
       toast({ title: "오류", description: "컬럼 삭제 실패", variant: "destructive" });
     }
   };
@@ -430,10 +434,16 @@ export function MetadataBuilder({ table, onUpdate }: MetadataBuilderProps) {
                                     </td>
                                     <td className="p-3 text-center">
                                       <Button
+                                        type="button"
                                         variant="ghost"
                                         size="icon"
                                         className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                                        onClick={() => handleDeleteColumn(col)}
+                                        onClick={(e) => {
+                                          e.preventDefault();
+                                          e.stopPropagation();
+                                          console.log('[DEBUG] Delete button clicked');
+                                          handleDeleteColumn(col);
+                                        }}
                                         title="컬럼 삭제"
                                       >
                                         <Trash2 className="h-4 w-4" />
