@@ -1781,6 +1781,7 @@ function QueryPageContent() {
       <TableSchemaViewer
         sql={schemaViewerSql || ''}
         dataSourceId={selectedDataSource}
+        dataSourceName={selectedDS?.name}
         open={!!schemaViewerSql}
         onOpenChange={(open) => !open && setSchemaViewerSql(null)}
       />

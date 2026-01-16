@@ -17,6 +17,7 @@ import { extractTableNames } from '@/lib/sql-parser';
 interface TableSchemaViewerProps {
   sql: string;
   dataSourceId: string;
+  dataSourceName?: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
@@ -44,6 +45,7 @@ interface TableInfo {
 export function TableSchemaViewer({
   sql,
   dataSourceId,
+  dataSourceName,
   open,
   onOpenChange,
 }: TableSchemaViewerProps) {
@@ -58,13 +60,36 @@ export function TableSchemaViewer({
     staleTime: 1000 * 60 * 5, // 5분 캐시
   });
 
-  // SQL에 사용된 테이블만 필터링
+  // 디버깅: API 응답 및 추출된 테이블명 확인
+  useEffect(() => {
+    if (open && allTables) {
+      console.log('[TableSchemaViewer] 추출된 테이블명:', tableNames);
+      console.log('[TableSchemaViewer] API 응답 테이블 수:', allTables.length);
+      console.log('[TableSchemaViewer] API 테이블명 목록:', allTables.map((t: TableInfo) => t.tableName));
+    }
+  }, [open, allTables, tableNames]);
+
+  // SQL에 사용된 테이블만 필터링 (대소문자 무시, 스키마 포함 처리)
   const relevantTables = allTables?.filter((table: TableInfo) =>
-    tableNames.some(
-      (name) =>
-        table.tableName.toLowerCase() === name.toLowerCase() ||
-        name.toLowerCase().includes(table.tableName.toLowerCase())
-    )
+    tableNames.some((name) => {
+      const extractedName = name.toLowerCase();
+      const dbTableName = table.tableName.toLowerCase();
+      // 스키마.테이블 형태에서 테이블명만 추출
+      const nameWithoutSchema = extractedName.includes('.') 
+        ? extractedName.split('.').pop() || extractedName 
+        : extractedName;
+      
+      return (
+        // 정확히 일치
+        dbTableName === extractedName ||
+        dbTableName === nameWithoutSchema ||
+        // 부분 매칭 (양방향)
+        dbTableName.includes(extractedName) ||
+        extractedName.includes(dbTableName) ||
+        nameWithoutSchema.includes(dbTableName) ||
+        dbTableName.includes(nameWithoutSchema)
+      );
+    })
   ) || [];
 
   // 모달이 열릴 때 첫 번째 테이블 자동 확장
@@ -113,10 +138,23 @@ export function TableSchemaViewer({
           ) : relevantTables.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
               <Table2 className="h-12 w-12 mx-auto mb-3 opacity-50" />
-              <p>일치하는 테이블을 찾을 수 없습니다.</p>
+              <p className="font-medium text-foreground">현재 데이터소스에서 테이블을 찾을 수 없습니다</p>
+              {dataSourceName && (
+                <p className="text-sm mt-1 text-muted-foreground">
+                  선택된 데이터소스: <code className="bg-primary/10 text-primary px-1.5 py-0.5 rounded font-medium">{dataSourceName}</code>
+                </p>
+              )}
               <p className="text-sm mt-2">
-                추출된 테이블: {tableNames.join(', ') || '없음'}
+                SQL에서 추출된 테이블: <code className="bg-muted px-1.5 py-0.5 rounded">{tableNames.join(', ') || '없음'}</code>
               </p>
+              <div className="mt-4 text-xs bg-muted/50 rounded-lg p-3 text-left max-w-md mx-auto">
+                <p className="font-medium mb-1">가능한 원인:</p>
+                <ul className="list-disc list-inside space-y-1 text-muted-foreground">
+                  <li>쿼리가 현재 선택된 데이터소스가 아닌 다른 데이터베이스의 테이블을 참조</li>
+                  <li>테이블이 메타데이터에 동기화되지 않음 (메타데이터 동기화 필요)</li>
+                  <li>테이블이 메타데이터에서 제외(Excluded) 상태</li>
+                </ul>
+              </div>
             </div>
           ) : (
             <div className="space-y-3">

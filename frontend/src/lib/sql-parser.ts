@@ -19,10 +19,33 @@ export function extractTableNames(sql: string): string[] {
     .replace(/\/\*[\s\S]*?\*\//g, ''); // 블록 주석
   
   // 문자열 리터럴 제거 (테이블명으로 혼동될 수 있음)
+  // 작은 따옴표는 문자열 리터럴이므로 제거
   cleanSql = cleanSql.replace(/'[^']*'/g, "''");
-  cleanSql = cleanSql.replace(/"[^"]*"/g, '""');
+  // 큰 따옴표는 PostgreSQL/Oracle에서 식별자(테이블/컬럼명)를 감싸므로, 따옴표만 제거하고 내용은 유지
+  cleanSql = cleanSql.replace(/"([^"]*)"/g, '$1');
   
   const tables: Set<string> = new Set();
+  const cteNames: Set<string> = new Set();
+  
+  // CTE(WITH절) 이름 추출 - 실제 테이블이 아닌 임시 결과 집합
+  // WITH cte_name AS (...), cte_name2 AS (...) 형식
+  const ctePattern = /\bWITH\s+(?:RECURSIVE\s+)?(.+?)(?=\s+SELECT\b)/gis;
+  let cteMatch: RegExpExecArray | null;
+  while ((cteMatch = ctePattern.exec(cleanSql)) !== null) {
+    const cteBlock = cteMatch[1];
+    // CTE 이름 추출: "name AS ("
+    const cteNamePattern = /([a-zA-Z_][a-zA-Z0-9_]*)\s+AS\s*\(/gi;
+    let nameMatch: RegExpExecArray | null;
+    while ((nameMatch = cteNamePattern.exec(cteBlock)) !== null) {
+      cteNames.add(nameMatch[1].toLowerCase());
+    }
+  }
+  
+  // WITH절 내부의 CTE 정의도 찾기 (재귀 및 복잡한 경우)
+  const simpleCtePattern = /\b([a-zA-Z_][a-zA-Z0-9_]*)\s+AS\s*\(/gi;
+  while ((cteMatch = simpleCtePattern.exec(cleanSql)) !== null) {
+    cteNames.add(cteMatch[1].toLowerCase());
+  }
   
   // 테이블명 패턴: 알파벳, 숫자, 언더스코어, 스키마.테이블 형식
   const tableNamePattern = '[a-zA-Z_][a-zA-Z0-9_]*(?:\\.[a-zA-Z_][a-zA-Z0-9_]*)?';
@@ -62,36 +85,36 @@ export function extractTableNames(sql: string): string[] {
   
   while ((match = fromPattern.exec(cleanSql)) !== null) {
     const tableName = match[1].toLowerCase();
-    // 서브쿼리나 예약어 제외
-    if (!isReservedWord(tableName)) {
+    // 서브쿼리나 예약어, CTE 이름 제외
+    if (!isReservedWord(tableName) && !cteNames.has(tableName)) {
       tables.add(tableName);
     }
   }
   
   while ((match = joinPattern.exec(cleanSql)) !== null) {
     const tableName = match[1].toLowerCase();
-    if (!isReservedWord(tableName)) {
+    if (!isReservedWord(tableName) && !cteNames.has(tableName)) {
       tables.add(tableName);
     }
   }
   
   while ((match = insertPattern.exec(cleanSql)) !== null) {
     const tableName = match[1].toLowerCase();
-    if (!isReservedWord(tableName)) {
+    if (!isReservedWord(tableName) && !cteNames.has(tableName)) {
       tables.add(tableName);
     }
   }
   
   while ((match = updatePattern.exec(cleanSql)) !== null) {
     const tableName = match[1].toLowerCase();
-    if (!isReservedWord(tableName)) {
+    if (!isReservedWord(tableName) && !cteNames.has(tableName)) {
       tables.add(tableName);
     }
   }
   
   while ((match = deletePattern.exec(cleanSql)) !== null) {
     const tableName = match[1].toLowerCase();
-    if (!isReservedWord(tableName)) {
+    if (!isReservedWord(tableName) && !cteNames.has(tableName)) {
       tables.add(tableName);
     }
   }
