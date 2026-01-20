@@ -151,6 +151,37 @@ class ApiClient {
     return this.request<any>(`/datasources/${id}/refresh-connection`, { method: 'POST' });
   }
 
+  // Data Source Access Management
+  async getDataSourceUsers(dataSourceId: string) {
+    return this.request<any[]>(`/datasources/${dataSourceId}/users`);
+  }
+
+  async grantDataSourceAccess(dataSourceId: string, data: {
+    userId: string;
+    role: 'VIEWER' | 'EDITOR' | 'ADMIN';
+    note?: string;
+    expiresAt?: string;
+  }) {
+    return this.request(`/datasources/${dataSourceId}/grant`, { method: 'POST', body: data });
+  }
+
+  async updateDataSourceAccess(dataSourceId: string, userId: string, role: 'VIEWER' | 'EDITOR' | 'ADMIN') {
+    return this.request(`/datasources/${dataSourceId}/access/${userId}`, { method: 'PUT', body: { role } });
+  }
+
+  async revokeDataSourceAccess(dataSourceId: string, userId: string) {
+    return this.request(`/datasources/${dataSourceId}/revoke/${userId}`, { method: 'DELETE' });
+  }
+
+  async bulkGrantDataSourceAccess(dataSourceId: string, userIds: string[], role: 'VIEWER' | 'EDITOR' | 'ADMIN') {
+    return this.request(`/datasources/${dataSourceId}/bulk-grant`, { method: 'POST', body: { userIds, role } });
+  }
+
+  async bulkRevokeDataSourceAccess(dataSourceId: string, userIds: string[]) {
+    return this.request(`/datasources/${dataSourceId}/bulk-revoke`, { method: 'POST', body: { userIds } });
+  }
+
+
   async syncMetadata(dataSourceId: string) {
     return this.request(`/metadata/sync/${dataSourceId}`, { method: 'POST' });
   }

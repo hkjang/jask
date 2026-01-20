@@ -34,6 +34,8 @@ import {
   DialogFooter,
   DialogDescription,
 } from '@/components/ui/dialog';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   MessageSquare,
   Search,
@@ -58,6 +60,12 @@ import {
   BarChart3,
   Percent,
   MessageCircle,
+  Play,
+  Sparkles,
+  RotateCcw,
+  Table2,
+  AlertCircle,
+  CheckCircle,
 } from 'lucide-react';
 import {
   PieChart,
@@ -95,6 +103,15 @@ export default function FeedbackManagementPage() {
   const [editingNote, setEditingNote] = useState(false);
   const [noteValue, setNoteValue] = useState('');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+
+  // Query execution & simulation state
+  const [detailTab, setDetailTab] = useState<'sql' | 'execute' | 'simulate'>('sql');
+  const [executionResult, setExecutionResult] = useState<any>(null);
+  const [isExecuting, setIsExecuting] = useState(false);
+  const [simulationResult, setSimulationResult] = useState<any>(null);
+  const [isSimulating, setIsSimulating] = useState(false);
+  const [executionError, setExecutionError] = useState<string | null>(null);
+  const [simulationError, setSimulationError] = useState<string | null>(null);
 
   // Calculate date range
   const { startDate, endDate } = useMemo(() => {
@@ -248,6 +265,50 @@ export default function FeedbackManagementPage() {
     setNoteValue(feedback.feedbackNote || '');
     setEditingNote(false);
     setDetailOpen(true);
+    // Reset execution/simulation state
+    setDetailTab('sql');
+    setExecutionResult(null);
+    setSimulationResult(null);
+    setExecutionError(null);
+    setSimulationError(null);
+  };
+
+  // Execute the SQL query
+  const handleExecuteQuery = async () => {
+    if (!selectedFeedback?.id) return;
+    
+    setIsExecuting(true);
+    setExecutionError(null);
+    setExecutionResult(null);
+    
+    try {
+      const result: any = await api.previewQuery(selectedFeedback.id, selectedFeedback.generatedSql);
+      setExecutionResult(result);
+      setDetailTab('execute');
+    } catch (err: any) {
+      setExecutionError(err.message || '쿼리 실행에 실패했습니다');
+    } finally {
+      setIsExecuting(false);
+    }
+  };
+
+  // Simulate (re-generate) the query with AI
+  const handleSimulateQuery = async () => {
+    if (!selectedFeedback?.dataSource?.id || !selectedFeedback?.naturalQuery) return;
+    
+    setIsSimulating(true);
+    setSimulationError(null);
+    setSimulationResult(null);
+    
+    try {
+      const result: any = await api.simulateQuery(selectedFeedback.dataSource.id, selectedFeedback.naturalQuery);
+      setSimulationResult(result);
+      setDetailTab('simulate');
+    } catch (err: any) {
+      setSimulationError(err.message || '시뮬레이션에 실패했습니다');
+    } finally {
+      setIsSimulating(false);
+    }
   };
 
   // Format date
@@ -651,7 +712,7 @@ export default function FeedbackManagementPage() {
             setEditingNote(false);
           }
         }}>
-          <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 {selectedFeedback?.feedback === 'POSITIVE' ? (
@@ -667,108 +728,312 @@ export default function FeedbackManagementPage() {
             </DialogHeader>
 
             {selectedFeedback && (
-              <div className="space-y-4">
-                {/* Meta Info */}
-                <div className="flex flex-wrap gap-2">
-                  <Badge variant="outline">
-                    <Database className="h-3 w-3 mr-1" />
-                    {selectedFeedback.dataSource?.name || 'Unknown'}
-                  </Badge>
-                  <Badge variant="outline">
-                    {selectedFeedback.feedback === 'POSITIVE' ? '긍정적 피드백' : '부정적 피드백'}
-                  </Badge>
-                  {selectedFeedback.trustScore !== null && (
+              <div className="flex-1 overflow-hidden flex flex-col space-y-4">
+                {/* Meta Info & Actions */}
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap gap-2">
                     <Badge variant="outline">
-                      신뢰도: {(selectedFeedback.trustScore * 100).toFixed(0)}%
+                      <Database className="h-3 w-3 mr-1" />
+                      {selectedFeedback.dataSource?.name || 'Unknown'}
                     </Badge>
-                  )}
+                    <Badge variant="outline">
+                      {selectedFeedback.feedback === 'POSITIVE' ? '긍정적 피드백' : '부정적 피드백'}
+                    </Badge>
+                    {selectedFeedback.trustScore !== null && (
+                      <Badge variant="outline">
+                        신뢰도: {(selectedFeedback.trustScore * 100).toFixed(0)}%
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleExecuteQuery}
+                      disabled={isExecuting || !selectedFeedback.generatedSql}
+                    >
+                      {isExecuting ? (
+                        <Loader2 className="h-4 w-4 animate-spin mr-1" />
+                      ) : (
+                        <Play className="h-4 w-4 mr-1" />
+                      )}
+                      쿼리 실행
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleSimulateQuery}
+                      disabled={isSimulating || !selectedFeedback.dataSource?.id}
+                    >
+                      {isSimulating ? (
+                        <Loader2 className="h-4 w-4 animate-spin mr-1" />
+                      ) : (
+                        <Sparkles className="h-4 w-4 mr-1" />
+                      )}
+                      AI 시뮬레이션
+                    </Button>
+                  </div>
                 </div>
 
                 {/* Question */}
-                <div className="space-y-2">
+                <div className="space-y-1">
                   <h4 className="text-sm font-medium text-muted-foreground">질문</h4>
                   <div className="p-3 bg-muted/50 rounded-lg">
                     <p className="text-sm">{selectedFeedback.naturalQuery}</p>
                   </div>
                 </div>
 
-                {/* Generated SQL */}
-                <div className="space-y-2">
-                  <h4 className="text-sm font-medium text-muted-foreground">생성된 SQL</h4>
-                  <div className="p-3 bg-zinc-900 rounded-lg overflow-x-auto">
-                    <pre className="text-sm text-green-400 font-mono whitespace-pre-wrap">
-                      {selectedFeedback.generatedSql}
-                    </pre>
-                  </div>
-                </div>
+                {/* Tabs for SQL, Execute Results, Simulation */}
+                <Tabs value={detailTab} onValueChange={(v: any) => setDetailTab(v)} className="flex-1 flex flex-col overflow-hidden">
+                  <TabsList className="grid w-full grid-cols-3">
+                    <TabsTrigger value="sql" className="gap-2">
+                      <FileText className="h-4 w-4" />
+                      SQL
+                    </TabsTrigger>
+                    <TabsTrigger value="execute" className="gap-2">
+                      <Table2 className="h-4 w-4" />
+                      실행 결과
+                      {executionResult && <Badge variant="secondary" className="ml-1 text-xs">{executionResult.rowCount || executionResult.rows?.length || 0}</Badge>}
+                    </TabsTrigger>
+                    <TabsTrigger value="simulate" className="gap-2">
+                      <Sparkles className="h-4 w-4" />
+                      시뮬레이션
+                    </TabsTrigger>
+                  </TabsList>
 
-                {/* Feedback Note */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-sm font-medium text-muted-foreground">사용자 피드백 메모</h4>
-                    {!editingNote && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setEditingNote(true)}
-                      >
-                        <Edit className="h-4 w-4 mr-1" />
-                        편집
-                      </Button>
-                    )}
-                  </div>
-                  {editingNote ? (
+                  {/* SQL Tab */}
+                  <TabsContent value="sql" className="flex-1 overflow-auto space-y-4">
                     <div className="space-y-2">
-                      <Textarea
-                        value={noteValue}
-                        onChange={(e) => setNoteValue(e.target.value)}
-                        placeholder="피드백에 대한 메모를 입력하세요..."
-                        rows={3}
-                      />
-                      <div className="flex gap-2">
-                        <Button
-                          size="sm"
-                          onClick={() => {
-                            updateMutation.mutate({
-                              id: selectedFeedback.id,
-                              data: { feedbackNote: noteValue || undefined },
-                            });
-                          }}
-                          disabled={updateMutation.isPending}
-                        >
-                          {updateMutation.isPending ? (
-                            <Loader2 className="h-4 w-4 animate-spin mr-1" />
-                          ) : (
-                            <Save className="h-4 w-4 mr-1" />
-                          )}
-                          저장
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => {
-                            setNoteValue(selectedFeedback.feedbackNote || '');
-                            setEditingNote(false);
-                          }}
-                        >
-                          취소
-                        </Button>
+                      <h4 className="text-sm font-medium text-muted-foreground">생성된 SQL</h4>
+                      <div className="p-3 bg-zinc-900 rounded-lg overflow-x-auto">
+                        <pre className="text-sm text-green-400 font-mono whitespace-pre-wrap">
+                          {selectedFeedback.generatedSql}
+                        </pre>
                       </div>
                     </div>
-                  ) : (
-                    <div className="p-3 bg-muted/50 rounded-lg min-h-[60px]">
-                      <p className="text-sm">
-                        {selectedFeedback.feedbackNote || (
-                          <span className="text-muted-foreground italic">메모 없음</span>
+
+                    {/* Feedback Note */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-sm font-medium text-muted-foreground">사용자 피드백 메모</h4>
+                        {!editingNote && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setEditingNote(true)}
+                          >
+                            <Edit className="h-4 w-4 mr-1" />
+                            편집
+                          </Button>
                         )}
-                      </p>
+                      </div>
+                      {editingNote ? (
+                        <div className="space-y-2">
+                          <Textarea
+                            value={noteValue}
+                            onChange={(e) => setNoteValue(e.target.value)}
+                            placeholder="피드백에 대한 메모를 입력하세요..."
+                            rows={3}
+                          />
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              onClick={() => {
+                                updateMutation.mutate({
+                                  id: selectedFeedback.id,
+                                  data: { feedbackNote: noteValue || undefined },
+                                });
+                              }}
+                              disabled={updateMutation.isPending}
+                            >
+                              {updateMutation.isPending ? (
+                                <Loader2 className="h-4 w-4 animate-spin mr-1" />
+                              ) : (
+                                <Save className="h-4 w-4 mr-1" />
+                              )}
+                              저장
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setNoteValue(selectedFeedback.feedbackNote || '');
+                                setEditingNote(false);
+                              }}
+                            >
+                              취소
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="p-3 bg-muted/50 rounded-lg min-h-[60px]">
+                          <p className="text-sm">
+                            {selectedFeedback.feedbackNote || (
+                              <span className="text-muted-foreground italic">메모 없음</span>
+                            )}
+                          </p>
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
+                  </TabsContent>
+
+                  {/* Execute Results Tab */}
+                  <TabsContent value="execute" className="flex-1 overflow-auto">
+                    {isExecuting ? (
+                      <div className="flex items-center justify-center py-10">
+                        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                        <span className="ml-2 text-muted-foreground">쿼리 실행 중...</span>
+                      </div>
+                    ) : executionError ? (
+                      <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-lg">
+                        <div className="flex items-center gap-2 text-red-500">
+                          <AlertCircle className="h-5 w-5" />
+                          <h4 className="font-medium">실행 오류</h4>
+                        </div>
+                        <p className="mt-2 text-sm text-red-400">{executionError}</p>
+                      </div>
+                    ) : executionResult ? (
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <CheckCircle className="h-5 w-5 text-green-500" />
+                            <span className="font-medium">실행 완료</span>
+                            <Badge variant="secondary">
+                              {executionResult.rowCount || executionResult.rows?.length || 0}개 결과
+                            </Badge>
+                          </div>
+                          {executionResult.executionTime && (
+                            <span className="text-sm text-muted-foreground">
+                              {executionResult.executionTime}ms
+                            </span>
+                          )}
+                        </div>
+                        
+                        {executionResult.rows && executionResult.rows.length > 0 ? (
+                          <ScrollArea className="h-[300px] border rounded-lg">
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  {Object.keys(executionResult.rows[0]).map((col) => (
+                                    <TableHead key={col} className="whitespace-nowrap">{col}</TableHead>
+                                  ))}
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {executionResult.rows.slice(0, 100).map((row: any, i: number) => (
+                                  <TableRow key={i}>
+                                    {Object.values(row).map((val: any, j: number) => (
+                                      <TableCell key={j} className="max-w-[200px] truncate">
+                                        {val === null ? <span className="text-muted-foreground italic">NULL</span> : String(val)}
+                                      </TableCell>
+                                    ))}
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </ScrollArea>
+                        ) : (
+                          <p className="text-sm text-muted-foreground py-4 text-center">
+                            결과가 없습니다
+                          </p>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center justify-center py-10 text-muted-foreground">
+                        <Play className="h-12 w-12 mb-4 opacity-20" />
+                        <p>"쿼리 실행" 버튼을 눌러 SQL을 실행하세요</p>
+                      </div>
+                    )}
+                  </TabsContent>
+
+                  {/* Simulation Tab */}
+                  <TabsContent value="simulate" className="flex-1 overflow-auto">
+                    {isSimulating ? (
+                      <div className="flex items-center justify-center py-10">
+                        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                        <span className="ml-2 text-muted-foreground">AI 시뮬레이션 중...</span>
+                      </div>
+                    ) : simulationError ? (
+                      <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-lg">
+                        <div className="flex items-center gap-2 text-red-500">
+                          <AlertCircle className="h-5 w-5" />
+                          <h4 className="font-medium">시뮬레이션 오류</h4>
+                        </div>
+                        <p className="mt-2 text-sm text-red-400">{simulationError}</p>
+                      </div>
+                    ) : simulationResult ? (
+                      <div className="space-y-4">
+                        <div className="flex items-center gap-2">
+                          <Sparkles className="h-5 w-5 text-purple-500" />
+                          <span className="font-medium">AI 재생성 결과</span>
+                          {simulationResult.trustScore && (
+                            <Badge variant="secondary">
+                              신뢰도: {(simulationResult.trustScore * 100).toFixed(0)}%
+                            </Badge>
+                          )}
+                        </div>
+
+                        {/* Comparison View */}
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <h5 className="text-sm font-medium text-muted-foreground">기존 SQL</h5>
+                            <div className="p-3 bg-zinc-900 rounded-lg overflow-x-auto h-[200px]">
+                              <pre className="text-xs text-orange-400 font-mono whitespace-pre-wrap">
+                                {selectedFeedback.generatedSql}
+                              </pre>
+                            </div>
+                          </div>
+                          <div className="space-y-2">
+                            <h5 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                              새로 생성된 SQL
+                              {simulationResult.sql === selectedFeedback.generatedSql && (
+                                <Badge className="bg-green-500/10 text-green-500 text-xs">동일</Badge>
+                              )}
+                            </h5>
+                            <div className="p-3 bg-zinc-900 rounded-lg overflow-x-auto h-[200px]">
+                              <pre className="text-xs text-green-400 font-mono whitespace-pre-wrap">
+                                {simulationResult.sql}
+                              </pre>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Simulation Details */}
+                        {simulationResult.schemaContext && (
+                          <div className="space-y-2">
+                            <h5 className="text-sm font-medium text-muted-foreground">사용된 테이블</h5>
+                            <div className="flex flex-wrap gap-2">
+                              {simulationResult.usedTables?.map((table: string) => (
+                                <Badge key={table} variant="outline" className="text-xs">
+                                  {table}
+                                </Badge>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {simulationResult.explanation && (
+                          <div className="space-y-2">
+                            <h5 className="text-sm font-medium text-muted-foreground">AI 설명</h5>
+                            <div className="p-3 bg-muted/50 rounded-lg">
+                              <p className="text-sm">{simulationResult.explanation}</p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center justify-center py-10 text-muted-foreground">
+                        <Sparkles className="h-12 w-12 mb-4 opacity-20" />
+                        <p>"AI 시뮬레이션" 버튼을 눌러 같은 질문으로 SQL을 다시 생성하세요</p>
+                        <p className="text-xs mt-2">기존 SQL과 비교하여 품질을 검증할 수 있습니다</p>
+                      </div>
+                    )}
+                  </TabsContent>
+                </Tabs>
               </div>
             )}
 
-            <DialogFooter className="sm:justify-between">
+            <DialogFooter className="sm:justify-between border-t pt-4">
               <Button
                 variant="destructive"
                 onClick={() => {

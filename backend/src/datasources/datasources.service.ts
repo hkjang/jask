@@ -125,6 +125,100 @@ export class DataSourcesService {
     });
   }
 
+  /**
+   * Find all data sources accessible by a specific user.
+   * System ADMINs have access to all data sources.
+   * Regular users only see data sources they have been granted access to.
+   */
+  async findAllForUser(userId: string, userRole: string) {
+    // System ADMIN has access to all data sources
+    if (userRole === 'ADMIN') {
+      const dataSources = await this.prisma.dataSource.findMany({
+        where: { isActive: true },
+        select: {
+          id: true,
+          name: true,
+          type: true,
+          host: true,
+          port: true,
+          database: true,
+          schema: true,
+          description: true,
+          environment: true,
+          sslEnabled: true,
+          healthStatus: true,
+          lastHealthCheck: true,
+          queryCount: true,
+          avgResponseTime: true,
+          lastActiveAt: true,
+          isActive: true,
+          createdAt: true,
+          _count: {
+            select: { tables: true, queries: true },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      // Add ADMIN role indication for all data sources
+      return dataSources.map(ds => ({
+        ...ds,
+        userRole: 'ADMIN' as const,
+        isSystemAdmin: true,
+      }));
+    }
+
+    // Regular users only see data sources they have been granted access to
+    const accessList = await this.prisma.dataSourceAccess.findMany({
+      where: {
+        userId,
+        OR: [
+          { expiresAt: null },
+          { expiresAt: { gt: new Date() } },
+        ],
+        dataSource: {
+          isActive: true,
+        },
+      },
+      include: {
+        dataSource: {
+          select: {
+            id: true,
+            name: true,
+            type: true,
+            host: true,
+            port: true,
+            database: true,
+            schema: true,
+            description: true,
+            environment: true,
+            sslEnabled: true,
+            healthStatus: true,
+            lastHealthCheck: true,
+            queryCount: true,
+            avgResponseTime: true,
+            lastActiveAt: true,
+            isActive: true,
+            createdAt: true,
+            _count: {
+              select: { tables: true, queries: true },
+            },
+          },
+        },
+      },
+      orderBy: { role: 'desc' },
+    });
+
+    return accessList.map(access => ({
+      ...access.dataSource,
+      userRole: access.role,
+      isSystemAdmin: false,
+      accessGrantedAt: access.grantedAt,
+      accessExpiresAt: access.expiresAt,
+    }));
+  }
+
+
   async findOne(id: string) {
     const dataSource = await this.prisma.dataSource.findUnique({
       where: { id },

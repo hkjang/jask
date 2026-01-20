@@ -54,6 +54,13 @@ enum VerificationStatus {
   REJECTED
 }
 
+// 데이터소스 접근 역할
+enum DataSourceRole {
+  VIEWER  // 조회만 가능
+  EDITOR  // 조회 + 쿼리 실행
+  ADMIN   // 조회 + 쿼리 실행 + 메타데이터 수정 + 권한 관리
+}
+
 // ===========================================
 // 데이터 소스 연결 정보
 // ===========================================
@@ -95,6 +102,9 @@ model DataSource {
   queries     QueryHistory[]
   samples     SampleQuery[]
   recommendedQuestions RecommendedQuestion[]
+  
+  // Role-based Access Control
+  accessPermissions DataSourceAccess[]
 }
 
 // ===========================================
@@ -337,13 +347,48 @@ model User {
 
   @@index([email])
 
-
   actions      UserActionLog[]
+  
+  // Role-based Data Source Access
+  dataSourceAccess DataSourceAccess[]
 }
 
 enum Role {
   USER
   ADMIN
+}
+
+// ===========================================
+// 데이터소스 접근 권한
+// ===========================================
+model DataSourceAccess {
+  id           String          @id @default(uuid())
+  
+  userId       String
+  user         User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  dataSourceId String
+  dataSource   DataSource      @relation(fields: [dataSourceId], references: [id], onDelete: Cascade)
+  
+  role         DataSourceRole  @default(VIEWER)
+  
+  // 권한 부여 정보
+  grantedById  String?         // 권한을 부여한 관리자 ID
+  grantedByName String?        // 권한을 부여한 관리자 이름
+  grantedAt    DateTime        @default(now())
+  expiresAt    DateTime?       // 선택적 만료일
+  
+  // 메모
+  note         String?
+  
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  
+  @@unique([userId, dataSourceId])
+  @@index([userId])
+  @@index([dataSourceId])
+  @@index([role])
+  @@index([expiresAt])
 }
 
 // ===========================================
