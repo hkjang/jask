@@ -139,7 +139,7 @@ export default function DataSourceAccessPage() {
     queryKey: ['adminUsers'],
     queryFn: async () => {
       const res: any = await api.getUsers(1, 200);
-      return res.items as User[];
+      return Array.isArray(res?.items) ? res.items as User[] : [];
     },
     enabled: grantDialogOpen,
   });
