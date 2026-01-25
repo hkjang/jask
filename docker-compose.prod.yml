@@ -54,6 +54,8 @@ services:
       JWT_SECRET: ${JWT_SECRET:-super_secret_jwt_key_please_change}
     ports:
       - "4000:4000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   frontend:
     build:
