@@ -139,7 +139,7 @@ export default function DataSourceAccessPage() {
 
   // Fetch users for grant dialog
   const { data: usersData } = useQuery({
-    queryKey: ['adminUsers'],
+    queryKey: ['adminUsers', 'grant'],
     queryFn: async () => {
       const res: any = await api.getUsers(1, 200);
       return Array.isArray(res?.items) ? res.items as User[] : [];
@@ -200,7 +200,7 @@ export default function DataSourceAccessPage() {
 
   // Filter users who don't already have access
   const availableUsers = useMemo(() => {
-    if (!usersData) return [];
+    if (!usersData || !Array.isArray(usersData)) return [];
     const existingUserIds = new Set(accessList.map(a => a.user.id));
     return usersData.filter(u => !existingUserIds.has(u.id) && u.isActive && u.role !== 'ADMIN');
   }, [usersData, accessList]);
