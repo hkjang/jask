@@ -45,7 +45,8 @@
     "reflect-metadata": "^0.2.1",
     "rxjs": "^7.8.1",
     "sql-parser-cst": "^0.27.0",
-    "xlsx": "^0.18.5"
+    "xlsx": "^0.18.5",
+    "prisma": "^5.8.0"
   },
   "devDependencies": {
     "@nestjs/cli": "^11.0.14",
@@ -64,7 +65,6 @@
     "eslint-plugin-prettier": "^5.1.2",
     "jest": "^29.7.0",
     "prettier": "^3.1.1",
-    "prisma": "^5.8.0",
     "source-map-support": "^0.5.21",
     "ts-jest": "^29.1.1",
     "ts-loader": "^9.5.1",

@@ -124,7 +124,7 @@ fi
 sleep 10
 
 log_info "Running database migrations..."
-if docker exec -i "$BACKEND_CONTAINER" npx prisma migrate deploy; then
+if docker exec -i "$BACKEND_CONTAINER" ./node_modules/.bin/prisma migrate deploy; then
     log_info "Migrations applied successfully."
 else
     log_error "Migration failed. Check database logs."
@@ -132,7 +132,7 @@ else
 fi
 
 log_info "Running database seeding..."
-if docker exec -i "$BACKEND_CONTAINER" npx prisma db seed; then
+if docker exec -i "$BACKEND_CONTAINER" ./node_modules/.bin/prisma db seed; then
     log_info "Database seeded successfully."
 else
     log_warn "Seeding failed or already applied. Check logs if this is unexpected."
