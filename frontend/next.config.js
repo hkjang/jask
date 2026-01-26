@@ -2,14 +2,7 @@
 const nextConfig = {
   reactStrictMode: true,
   output: 'standalone',
-  async rewrites() {
-    return [
-      {
-        source: '/api/:path*',
-        destination: process.env.BACKEND_URL || 'http://localhost:4000/api/:path*',
-      },
-    ];
-  },
+  output: 'standalone',
   webpack: (config) => {
     config.watchOptions = {
       poll: 1000,
