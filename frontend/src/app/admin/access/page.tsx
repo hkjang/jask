@@ -131,7 +131,10 @@ export default function DataSourceAccessPage() {
   // Fetch data sources
   const { data: dataSources = [], isLoading: dsLoading } = useQuery({
     queryKey: ['dataSources'],
-    queryFn: () => api.getDataSources() as Promise<DataSource[]>,
+    queryFn: async () => {
+      const res = await api.getDataSources();
+      return Array.isArray(res) ? (res as DataSource[]) : [];
+    },
   });
 
   // Fetch users for grant dialog
@@ -147,7 +150,10 @@ export default function DataSourceAccessPage() {
   // Fetch access list for selected data source
   const { data: accessList = [], isLoading: accessLoading, refetch: refetchAccess } = useQuery({
     queryKey: ['dataSourceAccess', selectedDataSource],
-    queryFn: () => api.getDataSourceUsers(selectedDataSource) as Promise<UserAccess[]>,
+    queryFn: async () => {
+      const res = await api.getDataSourceUsers(selectedDataSource);
+      return Array.isArray(res) ? (res as UserAccess[]) : [];
+    },
     enabled: !!selectedDataSource,
   });
 
