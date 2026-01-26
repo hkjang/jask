@@ -57,11 +57,13 @@ export class AuthService {
   }
 
   async login(dto: LoginDto, ipAddress?: string, userAgent?: string) {
+    console.log(`[DEBUG] Login attempt for email: ${dto.email}`);
     const user = await this.prisma.user.findUnique({
       where: { email: dto.email },
     });
 
     if (!user) {
+      console.log(`[DEBUG] User not found: ${dto.email}`);
       // 감사 로그: 존재하지 않는 사용자 로그인 시도
       await this.auditService.logAuth('FAILED', `로그인 실패: 존재하지 않는 사용자 (${dto.email})`, {
         userEmail: dto.email,
@@ -74,6 +76,7 @@ export class AuthService {
     }
 
     if (!user.isActive) {
+      console.log(`[DEBUG] User inactive: ${dto.email}`);
       // 감사 로그: 비활성화된 사용자 로그인 시도
       await this.auditService.logAuth('FAILED', `로그인 실패: 비활성화된 사용자 (${dto.email})`, {
         userId: user.id,
@@ -89,6 +92,7 @@ export class AuthService {
 
     const isPasswordValid = await bcrypt.compare(dto.password, user.password);
     if (!isPasswordValid) {
+      console.log(`[DEBUG] Password mismatch for: ${dto.email}`);
       // 감사 로그: 잘못된 비밀번호
       await this.auditService.logAuth('FAILED', `로그인 실패: 잘못된 비밀번호 (${dto.email})`, {
         userId: user.id,
@@ -101,6 +105,7 @@ export class AuthService {
       });
       throw new UnauthorizedException('이메일 또는 비밀번호가 올바르지 않습니다.');
     }
+    console.log(`[DEBUG] Login successful for: ${dto.email}`);
 
     const token = this.generateToken(user.id, user.email, user.role);
 
