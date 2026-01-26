@@ -71,6 +71,30 @@ Copy `jask-offline-v1.0.0.tar.gz` to the target offline server.
    - `prisma migrate deploy`: Database schema updates
    - `prisma db seed`: Initial data seeding (Admin User: `admin@jask.io` / `admin123`)
 
+### Configuration (Ports & Secrets)
+
+After running `./install.sh` first time, a `.env` file is generated. You can edit this file to change ports or secrets.
+
+```bash
+nano .env
+```
+
+**Example `.env`:**
+
+```env
+JWT_SECRET=...
+NEXTAUTH_SECRET=...
+# Ports Configuration
+BACKEND_PORT=4007  # Change if 4000 is used
+FRONTEND_PORT=3007 # Change if 3000 is used
+```
+
+Restart services to apply changes:
+
+```bash
+docker-compose up -d
+```
+
 ### Oracle Database Compatibility
 
 The system uses `node-oracledb` in **Thin Mode**, which offers significant advantages for offline deployment:
@@ -161,6 +185,30 @@ chmod +x scripts/export-images.sh
    - `prisma migrate deploy`: 데이터베이스 스키마 생성/업데이트
    - `prisma db seed`: 초기 데이터(관리자 계정 등) 적재
      - 기본 관리자 계정: `admin@jask.io` / `admin123`
+
+### 환경 설정 (포트 및 보안 키)
+
+`./install.sh`를 최초 실행하면 `.env` 파일이 생성됩니다. 이 파일을 수정하여 포트나 보안 키를 변경할 수 있습니다.
+
+```bash
+nano .env
+```
+
+**설정 예시:**
+
+```env
+JWT_SECRET=...
+NEXTAUTH_SECRET=...
+# Ports Configuration
+BACKEND_PORT=4007  # 4000번 포트 충돌 시 변경
+FRONTEND_PORT=3007 # 3000번 포트 충돌 시 변경
+```
+
+변경 사항 적용을 위해 서비스를 재시작하세요:
+
+```bash
+docker-compose up -d
+```
 
 ### 오라클 데이터베이스 호환성 (Oracle Compatibility)
 

@@ -78,6 +78,9 @@ if [ ! -f "$ENV_FILE" ]; then
     cat <<EOF > "$ENV_FILE"
 JWT_SECRET=${JWT_SECRET}
 NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+# Ports Configuration
+BACKEND_PORT=4000
+FRONTEND_PORT=3000
 EOF
     log_info "  .env created with generated secrets."
 else

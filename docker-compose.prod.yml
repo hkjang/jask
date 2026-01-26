@@ -55,11 +55,11 @@ services:
       DATABASE_URL: "postgresql://jask:jask_password@postgres:5432/jask?schema=public"
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      PORT: 4000
-      CORS_ORIGIN: "http://localhost:3000,https://jask.koreacb.com"
+      PORT: ${BACKEND_PORT:-4000}
+      CORS_ORIGIN: "http://localhost:${FRONTEND_PORT:-3000},https://jask.koreacb.com"
       JWT_SECRET: ${JWT_SECRET:-super_secret_jwt_key_please_change}
     ports:
-      - "4000:4000"
+      - "${BACKEND_PORT:-4000}:${BACKEND_PORT:-4000}"
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
@@ -75,12 +75,12 @@ services:
     depends_on:
       - backend
     environment:
-      BACKEND_URL: "http://backend:4000/api"
-      PORT: 3000
-      NEXTAUTH_URL: "http://localhost:3000"
+      BACKEND_URL: "http://backend:${BACKEND_PORT:-4000}/api"
+      PORT: ${FRONTEND_PORT:-3000}
+      NEXTAUTH_URL: "http://localhost:${FRONTEND_PORT:-3000}"
       NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-super_secret_nextauth_key_please_change}
     ports:
-      - "3000:3000"
+      - "${FRONTEND_PORT:-3000}:${FRONTEND_PORT:-3000}"
 
 volumes:
   postgres_data:
