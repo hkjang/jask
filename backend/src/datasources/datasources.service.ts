@@ -61,6 +61,47 @@ export class DataSourcesService {
     }
   }
 
+  // Oracle 연결 생성 (Service Name 실패 시 SID 시도)
+  private async createOracleConnection(
+    username: string,
+    password: string,
+    host: string,
+    port: number,
+    database: string,
+    schema?: string
+  ): Promise<oracledb.Connection> {
+    const dbName = schema || database;
+    // 시도 1: Service Name 형식 (Host:Port/ServiceName)
+    try {
+      return await oracledb.getConnection({
+        user: username,
+        password: password,
+        connectString: `${host}:${port}/${dbName}`,
+      });
+    } catch (metricError: any) {
+      // ORA-12514: TNS:listener does not currently know of service requested
+      if (metricError.errorNum === 12514) {
+        // 시도 2: SID 형식 (Host:Port:SID)
+        try {
+          return await oracledb.getConnection({
+            user: username,
+            password: password,
+            connectString: `${host}:${port}:${dbName}`,
+          });
+        } catch (sidError: any) {
+          // SID도 찾을 수 없는 경우(ORA-12505), 원래 에러(Service Name 미확인)를 반환하여 혼란 방지
+          // 사용자가 Service Name을 의도했을 가능성이 높음
+          if (sidError.errorNum === 12505) {
+            throw metricError;
+          }
+          // 그 외 에러(비밀번호 틀림 등)는 SID 접속 시도가 유효했음을 의미하므로 해당 에러 반환
+          throw sidError;
+        }
+      }
+      throw metricError;
+    }
+  }
+
   async create(dto: CreateDataSourceDto, auditContext?: { userId?: string; userEmail?: string; userName?: string; ipAddress?: string; userAgent?: string }) {
     // 연결 테스트
     await this.testConnection(dto);
@@ -332,11 +373,14 @@ export class DataSourcesService {
         await connection.query('SELECT 1');
         await connection.end();
       } else if (config.type === 'oracle') {
-        const connection = await oracledb.getConnection({
-          user: config.username,
-          password: config.password,
-          connectString: `${config.host}:${config.port}/${config.schema || config.database}`,
-        });
+        const connection = await this.createOracleConnection(
+          config.username,
+          config.password,
+          config.host,
+          config.port,
+          config.database,
+          config.schema
+        );
         await connection.execute('SELECT 1 FROM DUAL');
         await connection.close();
       } else {
@@ -606,11 +650,14 @@ export class DataSourcesService {
       this.connectionCache.set(dataSourceId, connection);
       return { client: connection, type: 'mysql' };
     } else if (dataSource.type === 'oracle') {
-      const connection = await oracledb.getConnection({
-        user: dataSource.username,
-        password: password,
-        connectString: `${dataSource.host}:${dataSource.port}/${dataSource.schema || dataSource.database}`,
-      });
+      const connection = await this.createOracleConnection(
+        dataSource.username,
+        password,
+        dataSource.host,
+        dataSource.port,
+        dataSource.database,
+        dataSource.schema || undefined
+      );
       this.connectionCache.set(dataSourceId, connection);
       return { client: connection, type: 'oracle' };
     }
