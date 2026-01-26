@@ -44,9 +44,10 @@
     "pg": "^8.11.3",
     "reflect-metadata": "^0.2.1",
     "rxjs": "^7.8.1",
-    "sql-parser-cst": "^0.27.0",
     "xlsx": "^0.18.5",
-    "prisma": "^5.8.0"
+    "prisma": "^5.8.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
   },
   "devDependencies": {
     "@nestjs/cli": "^11.0.14",
@@ -67,10 +68,7 @@
     "prettier": "^3.1.1",
     "source-map-support": "^0.5.21",
     "ts-jest": "^29.1.1",
-    "ts-loader": "^9.5.1",
-    "ts-node": "^10.9.2",
-    "tsconfig-paths": "^4.2.0",
-    "typescript": "^5.3.3"
+    "tsconfig-paths": "^4.2.0"
   },
   "jest": {
     "moduleFileExtensions": [
@@ -90,6 +88,6 @@
     "testEnvironment": "node"
   },
   "prisma": {
-    "seed": "ts-node prisma/seed.ts"
+    "seed": "./node_modules/.bin/ts-node prisma/seed.ts"
   }
 }
