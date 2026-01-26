@@ -6,7 +6,12 @@ COPY package*.json ./
 COPY prisma ./prisma/
 
 RUN npm install
+
+# Force Prisma engine download for Alpine
+ENV PRISMA_CLI_BINARY_TARGETS=linux-musl-openssl-3.0.x
 RUN npx prisma generate
+# Explicitly check version to trigger engine download check
+RUN npx prisma -v
 
 COPY . .
 
