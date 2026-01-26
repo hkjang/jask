@@ -199,9 +199,13 @@ export default function AdminSettingsPage() {
   const testProviderMutation = useMutation({
     mutationFn: async (provider: LLMProvider) => {
       setTestingProviderId(provider.id);
-      const response = await fetch(`${provider.baseUrl}/api/tags`, { method: 'GET' });
-      if (!response.ok) throw new Error('Connection failed');
-      return response.json();
+      return api.testLLMProvider({
+        name: provider.name,
+        baseUrl: provider.baseUrl,
+        model: provider.model,
+        apiKey: provider.apiKey,
+        config: {}, // 필요한 경우 추가 설정 전달
+      });
     },
     onSuccess: () => {
       toast({ title: '연결 성공', description: 'LLM 서버에 정상 연결되었습니다.' });

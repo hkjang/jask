@@ -62,6 +62,16 @@ export class AdminService {
     return this.prisma.lLMProvider.delete({ where: { id } });
   }
 
+  async testLLMProvider(data: {
+    name: string;
+    baseUrl: string;
+    model: string;
+    apiKey?: string;
+    config?: any;
+  }) {
+    return this.llmService.testProviderConnection(data);
+  }
+
   // 시스템 설정
   async getSettings() {
     const settings = await this.prisma.systemSettings.findMany();

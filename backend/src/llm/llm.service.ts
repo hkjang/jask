@@ -303,6 +303,29 @@ Rules:
     return chunks;
   }
 
+  async testProviderConnection(provider: {
+    name: string;
+    baseUrl: string;
+    model: string;
+    apiKey?: string;
+    config?: any;
+  }): Promise<{ success: boolean; message: string; models?: string[] }> {
+    const config = {
+      baseUrl: provider.baseUrl,
+      model: provider.model,
+      apiKey: provider.apiKey ?? undefined,
+      config: provider.config,
+    };
+
+    if (provider.name === 'ollama') {
+      return this.ollamaProvider.testConnection(config);
+    } else if (provider.name === 'vllm') {
+      return this.vllmProvider.testConnection(config);
+    }
+
+    return { success: false, message: `지원하지 않는 프로바이더 타입: ${provider.name}` };
+  }
+
   private async getActiveProvider(providerId?: string): Promise<{
     name: string;
     baseUrl: string;

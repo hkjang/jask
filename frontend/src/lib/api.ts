@@ -401,6 +401,10 @@ class ApiClient {
     return this.request(`/admin/users?page=${page}&limit=${limit}`);
   }
 
+  async testLLMProvider(data: any) {
+    return this.request('/admin/llm-providers/test', { method: 'POST', body: data });
+  }
+
   // Sample Queries
   async getSampleQueries(dataSourceId?: string) {
     const query = dataSourceId ? `?dataSourceId=${dataSourceId}` : '';

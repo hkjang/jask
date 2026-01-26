@@ -52,6 +52,12 @@ export class AdminController {
     return this.adminService.deleteLLMProvider(id);
   }
 
+  @Post('llm-providers/test')
+  @ApiOperation({ summary: 'LLM 프로바이더 연결 테스트' })
+  testLLMProvider(@Body() body: any) {
+    return this.adminService.testLLMProvider(body);
+  }
+
   // 시스템 설정
   @Get('settings')
   @ApiOperation({ summary: '시스템 설정 조회' })

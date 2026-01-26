@@ -231,6 +231,38 @@ export class OllamaProvider {
 
 
 
+  async testConnection(
+    config: { baseUrl: string; model: string; config?: any },
+  ): Promise<{ success: boolean; message: string; models?: string[] }> {
+    try {
+      const url = `${config.baseUrl}/api/tags`;
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 5000); // 5초 타임아웃
+
+      this.logger.log(`Ollama 연결 테스트: ${config.baseUrl}`);
+      const response = await fetch(url, { signal: controller.signal });
+      clearTimeout(timeout);
+
+      if (!response.ok) {
+        throw new Error(`Ollama API error: ${response.status} ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      const models = data.models?.map((m: any) => m.name) || [];
+
+      return {
+        success: true,
+        message: `Ollama 연결 성공. 모델 ${models.length}개 감지됨.`,
+        models,
+      };
+    } catch (error: any) {
+      if (error.name === 'AbortError') {
+        return { success: false, message: '연결 시간 초과 (5초)' };
+      }
+      return { success: false, message: `연결 실패: ${error.message}` };
+    }
+  }
+
   private generateMockSQL(prompt: string): string {
     // 간단한 Mock SQL 생성 (개발 테스트용)
     const lowerPrompt = prompt.toLowerCase();
