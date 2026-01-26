@@ -71,6 +71,18 @@ Copy `jask-offline-v1.0.0.tar.gz` to the target offline server.
    - `prisma migrate deploy`: Database schema updates
    - `prisma db seed`: Initial data seeding (Admin User: `admin@jask.io` / `admin123`)
 
+### Oracle Database Compatibility
+
+The system uses `node-oracledb` in **Thin Mode**, which offers significant advantages for offline deployment:
+
+- **No Additional Installation**: It does NOT require Oracle Instant Client to be installed on the Docker image or the host machine.
+- **Pure JavaScript/TypeScript**: Works immediately within the provided Alpine Linux based Docker image without missing library errors (`libaio`, etc.).
+
+**Requirements:**
+
+- **Oracle Database 12.1 or newer**: Thin Mode supports connection to Oracle Database 12c Release 1 (12.1) and later.
+- **Limitations**: Connecting to very old Oracle versions (11gR2 or older) is **NOT supported** in this offline package configuration as it requires Thick Mode libraries which are not included to keep the image slim and compliant.
+
 ### Troubleshooting
 
 - **Database Connection Error**: The install script waits for Postgres. If it fails, check `docker-compose logs postgres`.
@@ -149,6 +161,18 @@ chmod +x scripts/export-images.sh
    - `prisma migrate deploy`: 데이터베이스 스키마 생성/업데이트
    - `prisma db seed`: 초기 데이터(관리자 계정 등) 적재
      - 기본 관리자 계정: `admin@jask.io` / `admin123`
+
+### 오라클 데이터베이스 호환성 (Oracle Compatibility)
+
+본 시스템은 `node-oracledb`의 **Thin Mode**를 사용하여 오프라인 환경 배포에 최적화되어 있습니다.
+
+- **추가 설치 불필요**: Oracle Instant Client와 같은 별도의 클라이언트 라이브러리 설치가 필요 없습니다.
+- **즉시 실행 가능**: 제공된 Docker 이미지(Alpine Linux 기반) 내에서 추가적인 OS 라이브러리(`libaio` 등) 의존성 문제 없이 즉시 작동합니다.
+
+**지원 버전 및 주의사항:**
+
+- **Oracle Database 12.1 이상 지원**: Thin Mode는 Oracle 12c Release 1 (12.1) 이상 버전의 데이터베이스 접속만 지원합니다.
+- **구버전 접속 불가**: Oracle 11gR2 이하의 구버전 데이터베이스는 이 오프라인 패키지 구성으로는 **접속할 수 없습니다.** (구버전 접속을 위해서는 별도의 Thick Mode 라이브러리 구성이 필요하며, 이는 현재 Alpine 이미지에 포함되어 있지 않습니다.)
 
 ### 문제 해결 (Troubleshooting)
 
