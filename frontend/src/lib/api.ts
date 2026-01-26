@@ -190,11 +190,7 @@ class ApiClient {
     // Determine backend URL (assuming localhost:4000 for dev environments)
     // Ideally this should come from env or config. 
     // Since we are fixing a dev-mode proxy timeout, we use the direct backend URL.
-    const baseUrl = typeof window !== 'undefined' && window.location.hostname === 'localhost' 
-      ? 'http://localhost:4000/api' 
-      : '/api'; 
-
-    // If using direct URL, we need to handle headers manually as request() helper does
+    const baseUrl = '/api';
     const token = this.getToken();
     const headers: any = { 'Content-Type': 'application/json' };
     if (token) headers['Authorization'] = `Bearer ${token}`;
@@ -232,7 +228,7 @@ class ApiClient {
     if (token) headers['Authorization'] = `Bearer ${token}`;
 
     // Use direct URL to bypass Next.js proxy buffering
-    const response = await fetch(`http://localhost:4000/api/nl2sql/generate/stream`, {
+    const response = await fetch(`/api/nl2sql/generate/stream`, {
       method: 'POST',
       headers,
       body: JSON.stringify({ dataSourceId, question, autoExecute, threadId }),
