@@ -757,6 +757,116 @@ class ApiClient {
       { method: 'POST', body: options || {} }
     );
   }
+
+  // ==========================================
+  // Embedding Management
+  // ==========================================
+
+  // Embedding Configs
+  async getEmbeddingConfigs(dataSourceId?: string) {
+    const query = dataSourceId ? `?dataSourceId=${dataSourceId}` : '';
+    return this.request<any[]>(`/embedding/configs${query}`);
+  }
+
+  async createEmbeddingConfig(data: {
+    name: string;
+    description?: string;
+    topK?: number;
+    searchMethod?: 'DENSE' | 'SPARSE' | 'HYBRID';
+    denseWeight?: number;
+    sparseWeight?: number;
+    rrfK?: number;
+    embeddingModel?: string;
+    dimensions?: number;
+    dataSourceId?: string;
+  }) {
+    return this.request('/embedding/configs', { method: 'POST', body: data });
+  }
+
+  async updateEmbeddingConfig(id: string, data: any) {
+    return this.request(`/embedding/configs/${id}`, { method: 'PUT', body: data });
+  }
+
+  async deleteEmbeddingConfig(id: string) {
+    return this.request(`/embedding/configs/${id}`, { method: 'DELETE' });
+  }
+
+  // Embeddable Items
+  async getEmbeddableItems(options?: {
+    type?: 'TABLE' | 'COLUMN' | 'SAMPLE_QUERY' | 'DOCUMENT' | 'CUSTOM';
+    dataSourceId?: string;
+    isActive?: boolean;
+    limit?: number;
+    offset?: number;
+  }) {
+    const params = new URLSearchParams();
+    if (options?.type) params.set('type', options.type);
+    if (options?.dataSourceId) params.set('dataSourceId', options.dataSourceId);
+    if (options?.isActive !== undefined) params.set('isActive', String(options.isActive));
+    if (options?.limit) params.set('limit', String(options.limit));
+    if (options?.offset) params.set('offset', String(options.offset));
+    const query = params.toString();
+    return this.request<{ items: any[]; total: number }>(`/embedding/items${query ? `?${query}` : ''}`);
+  }
+
+  async createEmbeddableItem(data: {
+    type: 'TABLE' | 'COLUMN' | 'SAMPLE_QUERY' | 'DOCUMENT' | 'CUSTOM';
+    sourceId?: string;
+    content: string;
+    metadata?: any;
+    dataSourceId?: string;
+  }) {
+    return this.request('/embedding/items', { method: 'POST', body: data });
+  }
+
+  async updateEmbeddableItem(id: string, data: any) {
+    return this.request(`/embedding/items/${id}`, { method: 'PUT', body: data });
+  }
+
+  async deleteEmbeddableItem(id: string) {
+    return this.request(`/embedding/items/${id}`, { method: 'DELETE' });
+  }
+
+  async generateItemEmbedding(id: string) {
+    return this.request(`/embedding/items/${id}/embed`, { method: 'POST' });
+  }
+
+  async batchGenerateEmbeddings(options?: {
+    dataSourceId?: string;
+    type?: string;
+    forceRegenerate?: boolean;
+  }) {
+    return this.request<{ success: number; failed: number; skipped: number }>(
+      '/embedding/batch-embed',
+      { method: 'POST', body: options || {} }
+    );
+  }
+
+  // Search
+  async embeddingSearch(data: {
+    query: string;
+    dataSourceId?: string;
+    configId?: string;
+    topK?: number;
+    searchMethod?: 'DENSE' | 'SPARSE' | 'HYBRID';
+    type?: string;
+  }) {
+    return this.request<{
+      results: any[];
+      totalCount: number;
+      searchMethod: string;
+      timing: { denseTimeMs?: number; sparseTimeMs?: number; totalTimeMs: number };
+    }>('/embedding/search', { method: 'POST', body: data });
+  }
+
+  async embeddingSchemaSearch(data: {
+    dataSourceId: string;
+    question: string;
+    limit?: number;
+    searchMethod?: 'DENSE' | 'SPARSE' | 'HYBRID';
+  }) {
+    return this.request<{ context: string }>('/embedding/search/schema', { method: 'POST', body: data });
+  }
 }
 
 export const api = new ApiClient();

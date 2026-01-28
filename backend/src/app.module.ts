@@ -13,6 +13,7 @@ import { AdminModule } from './admin/admin.module';
 import { EvolutionModule } from './evolution/evolution.module';
 import { ThreadModule } from './thread/thread.module';
 import { AuditModule } from './audit/audit.module';
+import { EmbeddingModule } from './embedding/embedding.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { AuditModule } from './audit/audit.module';
     EvolutionModule,
     ThreadModule,
     AuditModule,
+    EmbeddingModule,
   ],
 })
 export class AppModule {}

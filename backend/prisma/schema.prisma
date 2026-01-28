@@ -525,6 +525,130 @@ model SchemaEmbedding {
 }
 
 // ===========================================
+// 임베딩 검색 방법
+// ===========================================
+enum SearchMethod {
+  DENSE      // 벡터 유사도 검색만
+  SPARSE     // 키워드(BM25) 검색만
+  HYBRID     // Dense + Sparse 결합
+}
+
+// ===========================================
+// 임베딩 대상 타입
+// ===========================================
+enum EmbeddableType {
+  TABLE           // 테이블 메타데이터
+  COLUMN          // 컬럼 메타데이터
+  SAMPLE_QUERY    // 샘플 쿼리
+  DOCUMENT        // 문서/텍스트
+  CUSTOM          // 사용자 정의
+}
+
+// ===========================================
+// 임베딩 설정 관리
+// ===========================================
+model EmbeddingConfig {
+  id              String       @id @default(uuid())
+  name            String       @unique
+  description     String?
+  
+  // 검색 설정
+  topK            Int          @default(10)
+  searchMethod    SearchMethod @default(HYBRID)
+  
+  // 하이브리드 검색 가중치 (0.0 ~ 1.0)
+  denseWeight     Float        @default(0.7)   // 벡터 검색 가중치
+  sparseWeight    Float        @default(0.3)   // BM25 검색 가중치
+  
+  // RRF (Reciprocal Rank Fusion) 파라미터
+  rrfK            Int          @default(60)    // RRF k 파라미터
+  
+  // 임베딩 설정
+  embeddingModel  String?                      // 사용할 임베딩 모델
+  dimensions      Int          @default(768)   // 임베딩 차원
+  
+  // 활성화 상태
+  isActive        Boolean      @default(true)
+  
+  // 연관 데이터소스 (선택적)
+  dataSourceId    String?
+  
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  
+  @@index([dataSourceId])
+  @@index([isActive])
+}
+
+// ===========================================
+// 임베딩 가능 요소 관리
+// ===========================================
+model EmbeddableItem {
+  id              String         @id @default(uuid())
+  
+  type            EmbeddableType
+  sourceId        String?        // 원본 ID (테이블ID, 쿼리ID 등)
+  
+  // 임베딩 대상 텍스트
+  content         String         @db.Text
+  contentHash     String?        // 변경 감지용 해시
+  
+  // 임베딩 벡터
+  embedding       Unsupported("vector")?
+  
+  // BM25용 토큰화된 텍스트 (검색 최적화)
+  tokens          String[]       @default([])
+  tokenCount      Int            @default(0)
+  
+  // 메타데이터
+  metadata        Json?          // 추가 정보
+  dataSourceId    String?
+  
+  // 상태
+  isActive        Boolean        @default(true)
+  lastEmbeddedAt  DateTime?
+  
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  
+  @@index([type])
+  @@index([sourceId])
+  @@index([dataSourceId])
+  @@index([isActive])
+}
+
+// ===========================================
+// 검색 로그 (분석용)
+// ===========================================
+model SearchLog {
+  id              String       @id @default(uuid())
+  
+  query           String       @db.Text
+  searchMethod    SearchMethod
+  topK            Int
+  
+  // 결과
+  resultCount     Int
+  denseResults    Json?        // Dense 검색 결과
+  sparseResults   Json?        // Sparse 검색 결과
+  finalResults    Json?        // 최종 결합 결과
+  
+  // 성능
+  denseTimeMs     Int?
+  sparseTimeMs    Int?
+  totalTimeMs     Int
+  
+  dataSourceId    String?
+  userId          String?
+  
+  createdAt       DateTime     @default(now())
+  
+  @@index([searchMethod])
+  @@index([dataSourceId])
+  @@index([createdAt])
+}
+
+// ===========================================
 // 거버넌스 정책 (Governance)
 // ===========================================
 model GovernancePolicy {
