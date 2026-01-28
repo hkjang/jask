@@ -54,6 +54,7 @@ import {
   BarChart3,
   Play,
   RefreshCw,
+  Eye,
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -82,6 +83,7 @@ interface EmbeddableItem {
   isActive: boolean;
   lastEmbeddedAt?: string;
   dataSourceId?: string;
+  metadata?: any;
 }
 
 interface SearchResult {
@@ -91,6 +93,7 @@ interface SearchResult {
   denseScore?: number;
   sparseScore?: number;
   hybridScore?: number;
+  metadata?: any;
 }
 
 export default function EmbeddingManagementPage() {
@@ -99,6 +102,7 @@ export default function EmbeddingManagementPage() {
 
   // Dialog states
   const [isConfigDialogOpen, setIsConfigDialogOpen] = useState(false);
+  const [selectedItem, setSelectedItem] = useState<any>(null);
   const [editingConfig, setEditingConfig] = useState<EmbeddingConfig | null>(null);
   const [configForm, setConfigForm] = useState({
     name: '',
@@ -685,6 +689,14 @@ export default function EmbeddingManagementPage() {
                           )}
                         </div>
                       </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="ml-2"
+                        onClick={() => setSelectedItem(item)}
+                      >
+                        <Eye className="h-4 w-4" />
+                      </Button>
                     </CardContent>
                   </Card>
                 ))}
@@ -790,6 +802,13 @@ export default function EmbeddingManagementPage() {
                                 {result.content}
                               </p>
                             </div>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => setSelectedItem(result)}
+                            >
+                              <Eye className="h-4 w-4" />
+                            </Button>
                           </div>
                         </CardContent>
                       </Card>
@@ -800,6 +819,78 @@ export default function EmbeddingManagementPage() {
             </Card>
           </TabsContent>
         </Tabs>
+
+        {/* Detail Dialog */}
+        <Dialog open={!!selectedItem} onOpenChange={(open) => !open && setSelectedItem(null)}>
+          <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                {selectedItem && getTypeBadge(selectedItem.type)}
+                <span className="truncate">항목 상세 정보</span>
+              </DialogTitle>
+              <DialogDescription>
+                ID: {selectedItem?.id}
+                {selectedItem?.sourceId && ` / Source ID: ${selectedItem.sourceId}`}
+              </DialogDescription>
+            </DialogHeader>
+
+            {selectedItem && (
+              <div className="space-y-6">
+                {/* 점수 정보 (검색 결과인 경우) */}
+                {(selectedItem.denseScore !== undefined || selectedItem.sparseScore !== undefined) && (
+                  <div className="flex gap-4 p-4 bg-muted rounded-lg">
+                    {selectedItem.hybridScore !== undefined && (
+                      <div className="flex flex-col">
+                        <span className="text-xs text-muted-foreground">Hybrid Score</span>
+                        <span className="font-bold text-lg text-primary">
+                          {selectedItem.hybridScore.toFixed(6)}
+                        </span>
+                      </div>
+                    )}
+                    {selectedItem.denseScore !== undefined && (
+                      <div className="flex flex-col">
+                        <span className="text-xs text-muted-foreground">Dense Score</span>
+                        <span className="font-mono">{selectedItem.denseScore.toFixed(4)}</span>
+                      </div>
+                    )}
+                    {selectedItem.sparseScore !== undefined && (
+                      <div className="flex flex-col">
+                        <span className="text-xs text-muted-foreground">Sparse Score</span>
+                        <span className="font-mono">{selectedItem.sparseScore.toFixed(4)}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">전체 콘텐츠</label>
+                  <div className="p-4 bg-muted rounded-md whitespace-pre-wrap text-sm max-h-[300px] overflow-y-auto font-mono">
+                    {selectedItem.content}
+                  </div>
+                </div>
+
+                {selectedItem.metadata && Object.keys(selectedItem.metadata).length > 0 && (
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">메타데이터</label>
+                    <div className="p-4 bg-slate-950 text-slate-50 rounded-md whitespace-pre overflow-x-auto text-xs font-mono">
+                      {JSON.stringify(selectedItem.metadata, null, 2)}
+                    </div>
+                  </div>
+                )}
+                
+                <div className="text-xs text-muted-foreground grid grid-cols-2 gap-2">
+                    {selectedItem.tokenCount !== undefined && <span>Token Count: {selectedItem.tokenCount}</span>}
+                    {selectedItem.lastEmbeddedAt && <span>Last Embedded: {selectedItem.lastEmbeddedAt}</span>}
+                    {selectedItem.dataSourceId && <span>DataSource: {selectedItem.dataSourceId}</span>}
+                </div>
+              </div>
+            )}
+
+            <DialogFooter>
+              <Button onClick={() => setSelectedItem(null)}>닫기</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </MainLayout>
   );
