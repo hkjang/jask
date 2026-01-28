@@ -25,8 +25,14 @@ export function DataPreview({ tableId }: DataPreviewProps) {
         setData(result);
       } catch (err: any) {
         console.error(err);
-        setError("데이터를 불러오는데 실패했습니다.");
-        toast({ title: "오류", description: "데이터 미리보기 실패", variant: "destructive" });
+        // 백엔드에서 반환한 상세 에러 메시지 사용
+        const errorMessage = err.message || "데이터를 불러오는데 실패했습니다.";
+        setError(errorMessage);
+        toast({ 
+          title: "데이터 미리보기 오류", 
+          description: errorMessage.length > 100 ? errorMessage.substring(0, 100) + "..." : errorMessage,
+          variant: "destructive" 
+        });
       } finally {
         setLoading(false);
       }

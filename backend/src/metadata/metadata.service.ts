@@ -423,17 +423,238 @@ export class MetadataService {
         const [rows] = await (client as mysql.Connection).query(query, [limit]);
         return rows;
       } else if (type === 'oracle') {
-        const query = `SELECT * FROM "${schemaName}"."${tableName}" WHERE ROWNUM <= :limit`;
-        const result = await (client as oracledb.Connection).execute(
-          query,
-          { limit },
-          { outFormat: oracledb.OUT_FORMAT_OBJECT }
-        );
-        return result.rows || [];
+        // Oracle: 접속 사용자와 테이블 소유자(OWNER)가 다를 수 있으므로 폴백 로직 적용
+        const oracleClient = client as oracledb.Connection;
+        
+        // 시도 1: OWNER.TABLE 형식 (정규화된 이름)
+        try {
+          const query = `SELECT * FROM "${schemaName}"."${tableName}" WHERE ROWNUM <= :limit`;
+          this.logger.debug(`Oracle preview attempt 1: ${query}`);
+          const result = await oracleClient.execute(
+            query,
+            { limit },
+            { outFormat: oracledb.OUT_FORMAT_OBJECT }
+          );
+          return this.sanitizeOracleRows(result.rows || []);
+        } catch (ownerError: any) {
+          // ORA-00942: table or view does not exist (권한 없거나 테이블 없음)
+          // ORA-01031: insufficient privileges
+          const isPermissionError = ownerError.errorNum === 942 || ownerError.errorNum === 1031;
+          
+          if (isPermissionError) {
+            this.logger.warn(`Oracle preview with OWNER failed for "${schemaName}"."${tableName}": ${ownerError.message}. Trying without schema prefix...`);
+            
+            // 시도 2: 테이블명만 사용 (동의어 또는 현재 스키마)
+            try {
+              const fallbackQuery = `SELECT * FROM "${tableName}" WHERE ROWNUM <= :limit`;
+              this.logger.debug(`Oracle preview attempt 2 (fallback): ${fallbackQuery}`);
+              const fallbackResult = await oracleClient.execute(
+                fallbackQuery,
+                { limit },
+                { outFormat: oracledb.OUT_FORMAT_OBJECT }
+              );
+              return this.sanitizeOracleRows(fallbackResult.rows || []);
+            } catch (fallbackError: any) {
+              // 시도 3: 스키마명 없이 대문자가 아닌 형태로 재시도 (혼합 케이스 테이블)
+              try {
+                const mixedCaseQuery = `SELECT * FROM ${tableName} WHERE ROWNUM <= :limit`;
+                this.logger.debug(`Oracle preview attempt 3 (mixed case): ${mixedCaseQuery}`);
+                const mixedCaseResult = await oracleClient.execute(
+                  mixedCaseQuery,
+                  { limit },
+                  { outFormat: oracledb.OUT_FORMAT_OBJECT }
+                );
+                return this.sanitizeOracleRows(mixedCaseResult.rows || []);
+              } catch (finalError: any) {
+                // 모든 시도 실패 - 상세한 에러 메시지 반환
+                this.logger.error(`Oracle preview failed for ${schemaName}.${tableName}: All attempts failed`);
+                const errorDetails = this.formatOraclePreviewError(ownerError.errorNum, schemaName, tableName);
+                throw new Error(errorDetails);
+              }
+            }
+          }
+          // 권한 문제가 아닌 다른 오류는 그대로 전파
+          throw ownerError;
+        }
       }
-    } catch (error) {
+    } catch (error: any) {
       this.logger.error(`Preview failed for ${tableName}: ${error.message}`);
-      throw new Error('Failed to preview table data');
+      // 이미 포맷된 에러 메시지면 그대로 사용, 아니면 일반 메시지
+      if (error.message.includes('데이터 미리보기 실패') || error.message.includes('권한')) {
+        throw error;
+      }
+      throw new Error(`데이터 미리보기 실패: ${error.message}`);
+    }
+  }
+
+  /**
+   * Oracle 결과 행을 JSON 직렬화 가능한 일반 객체로 변환
+   * Oracle의 NVPair 객체는 순환 참조를 포함하여 JSON.stringify 시 오류 발생
+   * LOB 데이터는 비동기로 읽어서 실제 내용을 표시
+   */
+  private async sanitizeOracleRows(rows: any[]): Promise<any[]> {
+    const sanitizedRows: any[] = [];
+    
+    for (const row of rows) {
+      const sanitizedRow: Record<string, any> = {};
+      for (const key of Object.keys(row)) {
+        const value = row[key];
+        sanitizedRow[key] = await this.sanitizeOracleValue(value);
+      }
+      sanitizedRows.push(sanitizedRow);
+    }
+    
+    return sanitizedRows;
+  }
+
+  /**
+   * Oracle 개별 값을 JSON 직렬화 가능한 형태로 변환
+   */
+  private async sanitizeOracleValue(value: any): Promise<any> {
+    // null/undefined 처리
+    if (value === null || value === undefined) {
+      return value;
+    }
+    
+    // LOB (CLOB/BLOB) 객체 처리 - oracledb의 Lob 클래스
+    if (typeof value === 'object' && value.constructor && value.constructor.name === 'Lob') {
+      try {
+        // LOB 데이터를 문자열로 읽기
+        const lobData = await this.readOracleLob(value);
+        // 미리보기이므로 최대 500자까지만 표시
+        if (typeof lobData === 'string' && lobData.length > 500) {
+          return lobData.substring(0, 500) + '... (truncated)';
+        }
+        return lobData;
+      } catch (err: any) {
+        this.logger.warn(`Failed to read LOB data: ${err.message}`);
+        return '[LOB 읽기 실패]';
+      }
+    }
+    
+    // getData 메서드가 있는 객체 (일부 Oracle 타입)
+    if (typeof value === 'object' && typeof value.getData === 'function') {
+      try {
+        const data = await value.getData();
+        if (typeof data === 'string' && data.length > 500) {
+          return data.substring(0, 500) + '... (truncated)';
+        }
+        return data;
+      } catch {
+        return '[데이터 읽기 실패]';
+      }
+    }
+    
+    // Date 객체
+    if (value instanceof Date) {
+      return value.toISOString();
+    }
+    
+    // Buffer (BLOB 등)
+    if (Buffer.isBuffer(value)) {
+      // 작은 바이너리는 Base64로 표시, 큰 것은 크기만 표시
+      if (value.length <= 100) {
+        return `[Binary: ${value.toString('base64').substring(0, 50)}...]`;
+      }
+      return `[Binary data: ${value.length} bytes]`;
+    }
+    
+    // 기타 객체
+    if (typeof value === 'object') {
+      try {
+        // 순환 참조 체크 후 변환
+        return JSON.parse(JSON.stringify(value));
+      } catch {
+        return String(value);
+      }
+    }
+    
+    // 기본 타입은 그대로 반환
+    return value;
+  }
+
+  /**
+   * Oracle LOB 객체에서 데이터 읽기
+   */
+  private readOracleLob(lob: any): Promise<string> {
+    return new Promise((resolve, reject) => {
+      // LOB 타입 로깅
+      this.logger.debug(`Reading LOB: type=${lob.type}`);
+      
+      // LOB 타입 확인
+      // DB_TYPE_CLOB = 2017, DB_TYPE_NCLOB = 2019, DB_TYPE_BLOB = 2007
+      // 또는 구버전: CLOB = 112, BLOB = 113
+      const isClob = lob.type === 2017 || lob.type === 2019 || lob.type === 112;
+      
+      if (isClob) {
+        // CLOB: 문자열로 수집
+        let content = '';
+        lob.setEncoding('utf8');
+        lob.on('data', (chunk: string) => {
+          content += chunk;
+          // 미리보기이므로 1000자 이상이면 중단
+          if (content.length > 1000) {
+            lob.destroy();
+            resolve(content.substring(0, 1000) + '... (truncated)');
+          }
+        });
+        lob.on('end', () => resolve(content));
+        lob.on('error', (err: any) => reject(err));
+      } else {
+        // BLOB: 바이너리 수집 후 텍스트 변환 시도
+        const chunks: Buffer[] = [];
+        let totalSize = 0;
+        
+        lob.on('data', (chunk: Buffer) => {
+          chunks.push(chunk);
+          totalSize += chunk.length;
+          // 미리보기이므로 10KB 이상이면 중단
+          if (totalSize > 10240) {
+            lob.destroy();
+            resolve(`[BLOB: ${totalSize}+ bytes - 너무 큼]`);
+          }
+        });
+        
+        lob.on('end', () => {
+          const buffer = Buffer.concat(chunks);
+          // 작은 BLOB은 텍스트로 변환 시도
+          if (buffer.length <= 1000) {
+            try {
+              const text = buffer.toString('utf8');
+              // 유효한 텍스트인지 확인 (제어 문자가 거의 없는지)
+              const controlChars = text.match(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g);
+              if (!controlChars || controlChars.length < text.length * 0.1) {
+                resolve(text);
+                return;
+              }
+            } catch {
+              // UTF-8 변환 실패
+            }
+          }
+          resolve(`[BLOB: ${buffer.length} bytes]`);
+        });
+        
+        lob.on('error', (err: any) => reject(err));
+      }
+    });
+  }
+
+  /**
+   * Oracle 미리보기 에러 메시지 포맷
+   */
+  private formatOraclePreviewError(errorNum: number, schemaName: string, tableName: string): string {
+    switch (errorNum) {
+      case 942:
+        return `데이터 미리보기 실패: 테이블 "${schemaName}"."${tableName}"에 접근할 수 없습니다. ` +
+               `현재 접속 사용자에게 해당 테이블에 대한 SELECT 권한이 없거나, 테이블이 존재하지 않습니다. ` +
+               `관리자에게 "GRANT SELECT ON ${schemaName}.${tableName} TO [접속사용자]" 권한 부여를 요청하세요.`;
+      case 1031:
+        return `데이터 미리보기 실패: 권한이 부족합니다. ` +
+               `테이블 "${schemaName}"."${tableName}"에 대한 SELECT 권한이 필요합니다. ` +
+               `관리자에게 권한 부여를 요청하세요.`;
+      default:
+        return `데이터 미리보기 실패: Oracle 에러 (ORA-${String(errorNum).padStart(5, '0')}). ` +
+               `테이블: "${schemaName}"."${tableName}"`;
     }
   }
 
