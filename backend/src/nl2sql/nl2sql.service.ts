@@ -39,6 +39,7 @@ export class NL2SQLService {
 
   async *generateAndExecuteStream(request: NL2SQLRequest): AsyncGenerator<any> {
     const { dataSourceId, question, userId, autoExecute, threadId } = request;
+    let referencedTablesMarkdown = '';
 
     yield { type: 'step_start', step: 'schema', message: '스키마 컨텍스트 조회 (Vector Search) 중...' };
     
@@ -75,7 +76,8 @@ export class NL2SQLService {
       
       // Persist in message content for history
       const tableLinks = schemaSearch.tables.map(t => `[${t}](table:${t})`).join(', ');
-      yield { type: 'content_chunk', content: `**참조 테이블**: ${tableLinks}\n\n` };
+      referencedTablesMarkdown = `**참조 테이블**: ${tableLinks}\n\n`;
+      yield { type: 'content_chunk', content: referencedTablesMarkdown };
     }
     
     // If schema is empty but DDL is allowed, provide minimal context for DDL queries
@@ -335,7 +337,7 @@ ${schemaContext}`;
                data: {
                    threadId,
                    role: 'ASSISTANT',
-                   content: `### SQL Generated\n\`\`\`sql\n${generatedSql}\n\`\`\`\n\n### Explanation\n${explanation}`,
+                   content: `${referencedTablesMarkdown}### SQL Generated\n\`\`\`sql\n${generatedSql}\n\`\`\`\n\n### Explanation\n${explanation}`,
                    queryId: queryHistory.id
                }
            });

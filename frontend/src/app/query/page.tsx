@@ -117,6 +117,16 @@ interface Message {
 
 const CHART_COLORS = ['hsl(210, 70%, 50%)', 'hsl(240, 70%, 50%)', 'hsl(270, 70%, 50%)', 'hsl(300, 70%, 50%)', 'hsl(330, 70%, 50%)'];
 
+// Helper to extract tables from markdown content for history
+const extractTablesFromContent = (content: string): string[] => {
+  if (!content) return [];
+  const match = content.match(/\*\*참조 테이블\*\*:\s*(.*?)(\n|$)/);
+  if (!match) return [];
+  const links = match[1];
+  const tableMatches = [...links.matchAll(/\[(.*?)\]\(table:.*?\)/g)];
+  return tableMatches.map(m => m[1]);
+};
+
 const ChartView = ({ rows }: { rows: any[] }) => {
   const [chartType, setChartType] = useState<'bar' | 'line' | 'pie'>('bar');
   
@@ -950,21 +960,32 @@ function QueryPageContent() {
                 ) : (
                   <div className="space-y-3">
                     {/* Selected Tables Context */}
-                    {message.selectedTables && message.selectedTables.length > 0 && (
-                      <div className="flex flex-wrap gap-1 mb-2 px-1">
-                        <span className="text-xs text-muted-foreground self-center mr-1">참조 테이블:</span>
-                        {message.selectedTables.map(t => (
-                           <Badge 
-                             variant="secondary" 
-                             className="text-[10px] h-5 px-1.5 font-mono cursor-pointer hover:bg-muted-foreground/20 transition-colors" 
-                             key={t}
-                             onClick={() => handleTableClick(t)}
-                           >
-                             {t}
-                           </Badge>
-                        ))}
-                      </div>
-                    )}
+                    {/* Selected Tables Context */}
+                    {(() => {
+                      // Combine live state and persisted history
+                      const displayTables = (message.selectedTables && message.selectedTables.length > 0)
+                        ? message.selectedTables 
+                        : extractTablesFromContent(message.content);
+
+                      if (displayTables && displayTables.length > 0) {
+                        return (
+                          <div className="flex flex-wrap gap-1 mb-2 px-1">
+                            <span className="text-xs text-muted-foreground self-center mr-1">참조 테이블:</span>
+                            {displayTables.map(t => (
+                               <Badge 
+                                 variant="secondary" 
+                                 className="text-[10px] h-5 px-1.5 font-mono cursor-pointer hover:bg-muted-foreground/20 transition-colors" 
+                                 key={t}
+                                 onClick={() => handleTableClick(t)}
+                               >
+                                 {t}
+                               </Badge>
+                            ))}
+                          </div>
+                        );
+                      }
+                      return null;
+                    })()}
                     {message.isLoading && !message.content ? (
                       <div className="bg-muted rounded-2xl rounded-tl-sm px-4 py-4">
                         <div className="flex items-center gap-3">

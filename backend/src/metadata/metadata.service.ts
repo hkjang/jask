@@ -909,16 +909,19 @@ export class MetadataService {
       for (const row of results) {
         if (selectedTables.length >= limit) break;
 
-        // Filter system tables and low relevance results
+        // Filter system tables
         if (row.tableName.startsWith('_') || row.tableName.startsWith('pg_')) continue;
-        if (row.distance > 0.45) continue; // Threshold: Similarity > 0.55
 
         // Skip if this table was already included as a matched view
         const isAlreadyIncluded = matchedViews.some(v => v.tableName === row.tableName);
-        if (!isAlreadyIncluded) {
-          context += `${row.content}\n\n`;
-          selectedTables.push(row.tableName);
-        }
+        if (isAlreadyIncluded) continue;
+
+        // Relevance Threshold with Minimum Guarantee
+        // Allow top 3 matches regardless of score (to avoid empty context), then enforce strict threshold (0.55)
+        if (row.distance > 0.55 && selectedTables.length >= 3) continue;
+
+        context += `${row.content}\n\n`;
+        selectedTables.push(row.tableName);
       }
       
       return { context, tables: selectedTables };
