@@ -668,7 +668,11 @@ export default function EmbeddingManagementPage() {
             ) : (
               <div className="grid gap-2">
                 {items.map((item: EmbeddableItem) => (
-                  <Card key={item.id} className="py-2">
+                  <Card 
+                    key={item.id} 
+                    className="py-2 cursor-pointer hover:bg-muted/50 transition-colors"
+                    onClick={() => setSelectedItem(item)}
+                  >
                     <CardContent className="flex items-center justify-between py-2">
                       <div className="flex items-center gap-3 flex-1 min-w-0">
                         {getTypeBadge(item.type)}
@@ -693,7 +697,10 @@ export default function EmbeddingManagementPage() {
                         variant="ghost"
                         size="icon"
                         className="ml-2"
-                        onClick={() => setSelectedItem(item)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedItem(item);
+                        }}
                       >
                         <Eye className="h-4 w-4" />
                       </Button>
@@ -771,7 +778,11 @@ export default function EmbeddingManagementPage() {
                 {searchResults.length > 0 && (
                   <div className="space-y-2 max-h-[400px] overflow-y-auto">
                     {searchResults.map((result, idx) => (
-                      <Card key={result.id} className="py-2">
+                      <Card 
+                        key={result.id} 
+                        className="py-2 cursor-pointer hover:bg-muted/50 transition-colors"
+                        onClick={() => setSelectedItem(result)}
+                      >
                         <CardContent className="py-2">
                           <div className="flex items-start gap-3">
                             <span className="text-sm font-bold text-muted-foreground">
@@ -805,7 +816,10 @@ export default function EmbeddingManagementPage() {
                             <Button
                               variant="ghost"
                               size="icon"
-                              onClick={() => setSelectedItem(result)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedItem(result);
+                              }}
                             >
                               <Eye className="h-4 w-4" />
                             </Button>
