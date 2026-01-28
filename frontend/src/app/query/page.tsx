@@ -110,6 +110,7 @@ interface Message {
   feedback?: 'POSITIVE' | 'NEGATIVE';
   favorited?: boolean;
   favoriteId?: string;
+  selectedTables?: string[];
 }
 
 
@@ -644,6 +645,12 @@ function QueryPageContent() {
       for await (const chunk of stream) {
         if (chunk.type === 'step_start') {
           // stepMessage = `[${chunk.step}] ${chunk.message}`; 
+        } else if (chunk.type === 'context_selected') {
+           setMessages((prev) => prev.map(msg => 
+              msg.id === assistantMessage.id 
+                ? { ...msg, selectedTables: chunk.tables } 
+                : msg
+            ));
         } else if (chunk.type === 'content_chunk') {
           if (chunk.step === 'sql_generation') {
             currentSql += chunk.content;
@@ -936,6 +943,15 @@ function QueryPageContent() {
                   </div>
                 ) : (
                   <div className="space-y-3">
+                    {/* Selected Tables Context */}
+                    {message.selectedTables && message.selectedTables.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mb-2 px-1">
+                        <span className="text-xs text-muted-foreground self-center mr-1">참조 테이블:</span>
+                        {message.selectedTables.map(t => (
+                           <Badge variant="secondary" className="text-[10px] h-5 px-1.5 font-mono" key={t}>{t}</Badge>
+                        ))}
+                      </div>
+                    )}
                     {message.isLoading && !message.content ? (
                       <div className="bg-muted rounded-2xl rounded-tl-sm px-4 py-4">
                         <div className="flex items-center gap-3">

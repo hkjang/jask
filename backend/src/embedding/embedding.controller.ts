@@ -123,14 +123,12 @@ export class EmbeddingController {
       searchMethod?: 'DENSE' | 'SPARSE' | 'HYBRID';
     },
   ) {
-    return {
-      context: await this.embeddingService.searchSchemaContext(
-        dto.dataSourceId,
-        dto.question,
-        dto.limit ?? 20,
-        dto.searchMethod as any,
-      ),
-    };
+    return this.embeddingService.searchSchemaContext(
+      dto.dataSourceId,
+      dto.question,
+      dto.limit ?? 20,
+      dto.searchMethod as any,
+    );
   }
 
   // ===========================================

@@ -549,7 +549,7 @@ export class EmbeddingService {
     question: string,
     limit: number = 20,
     searchMethod: SearchMethod = SearchMethod.HYBRID,
-  ): Promise<string> {
+  ): Promise<{ context: string; tables: string[] }> {
     // 기존 SchemaEmbedding 테이블 사용하는 검색
     const startTime = Date.now();
 
@@ -563,7 +563,7 @@ export class EmbeddingService {
       }
     } catch (error) {
       this.logger.error(`Schema context search failed: ${error.message}`);
-      return '';
+      return { context: '', tables: [] };
     }
   }
 
@@ -571,7 +571,7 @@ export class EmbeddingService {
     dataSourceId: string,
     question: string,
     limit: number,
-  ): Promise<string> {
+  ): Promise<{ context: string; tables: string[] }> {
     const embedding = await this.llmService.generateEmbedding(question);
     const vectorStr = `[${embedding.join(',')}]`;
 
@@ -585,14 +585,17 @@ export class EmbeddingService {
       LIMIT ${limit}
     `;
 
-    return results.map(row => row.content).join('\n\n');
+    return {
+      context: results.map(row => row.content).join('\n\n'),
+      tables: results.map(row => row.tableName),
+    };
   }
 
   private async sparseSchemaSearch(
     dataSourceId: string,
     question: string,
     limit: number,
-  ): Promise<string> {
+  ): Promise<{ context: string; tables: string[] }> {
     const queryTokens = this.tokenize(question);
 
     // SchemaEmbedding의 content를 가져와서 BM25 적용
@@ -640,17 +643,19 @@ export class EmbeddingService {
 
     scoredSchemas.sort((a, b) => b.score - a.score);
 
-    return scoredSchemas
-      .slice(0, limit)
-      .map(s => s.content)
-      .join('\n\n');
+    const topSchemas = scoredSchemas.slice(0, limit);
+
+    return {
+      context: topSchemas.map(s => s.content).join('\n\n'),
+      tables: topSchemas.map(s => s.table.tableName),
+    };
   }
 
   private async hybridSchemaSearch(
     dataSourceId: string,
     question: string,
     limit: number,
-  ): Promise<string> {
+  ): Promise<{ context: string; tables: string[] }> {
     // Dense 검색
     const embedding = await this.llmService.generateEmbedding(question);
     const vectorStr = `[${embedding.join(',')}]`;
@@ -715,7 +720,7 @@ export class EmbeddingService {
       .slice(0, limit * 2);
 
     // RRF로 결합
-    const scoreMap = new Map<string, { content: string; score: number }>();
+    const scoreMap = new Map<string, { content: string; score: number; tableName: string }>();
 
     denseResults.forEach((result, rank) => {
       const rrfScore = 0.7 * (1 / (60 + rank + 1));
@@ -723,7 +728,7 @@ export class EmbeddingService {
       if (existing) {
         existing.score += rrfScore;
       } else {
-        scoreMap.set(result.id, { content: result.content, score: rrfScore });
+        scoreMap.set(result.id, { content: result.content, score: rrfScore, tableName: result.tableName });
       }
     });
 
@@ -733,7 +738,7 @@ export class EmbeddingService {
       if (existing) {
         existing.score += rrfScore;
       } else {
-        scoreMap.set(result.id, { content: result.content, score: rrfScore });
+        scoreMap.set(result.id, { content: result.content, score: rrfScore, tableName: result.tableName });
       }
     });
 
@@ -741,7 +746,10 @@ export class EmbeddingService {
       .sort((a, b) => b.score - a.score)
       .slice(0, limit);
 
-    return hybridResults.map(r => r.content).join('\n\n');
+    return {
+      context: hybridResults.map(r => r.content).join('\n\n'),
+      tables: hybridResults.map(r => r.tableName),
+    };
   }
 
   // ===========================================

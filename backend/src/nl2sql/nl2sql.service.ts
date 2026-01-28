@@ -55,7 +55,13 @@ export class NL2SQLService {
     const allowDDL = sqlSettings.find(s => s.key === 'sql_allow_ddl')?.value === true;
     
     // Use Vector Search for scalable schema retrieval
-    let schemaContext = await this.metadataService.searchSchemaContext(dataSourceId, question);
+    const schemaSearch = await this.metadataService.searchSchemaContext(dataSourceId, question);
+    let schemaContext = schemaSearch.context;
+
+    if (schemaSearch.tables && schemaSearch.tables.length > 0) {
+      this.logger.log(`[Schema Search] Selected tables: ${schemaSearch.tables.join(', ')}`);
+      yield { type: 'context_selected', tables: schemaSearch.tables };
+    }
     
     // If schema is empty but DDL is allowed, provide minimal context for DDL queries
     if (!schemaContext || schemaContext.trim() === '') {

@@ -811,7 +811,7 @@ export class MetadataService {
     return context;
   }
 
-  async searchSchemaContext(dataSourceId: string, question: string, limit: number = 20): Promise<string> {
+  async searchSchemaContext(dataSourceId: string, question: string, limit: number = 20): Promise<{ context: string; tables: string[] }> {
     try {
       // 1. Generate embedding for the question
       const embedding = await this.llmService.generateEmbedding(question);
@@ -846,12 +846,14 @@ export class MetadataService {
       });
 
       // 3. Build View Context (prioritized)
+      const selectedTables: string[] = [];
       let viewContext = '';
       if (matchedViews.length > 0) {
         this.logger.log(`[View Boost] Found ${matchedViews.length} relevant views for question: "${question.substring(0, 50)}..."`);
         viewContext = '=== 추천 뷰 테이블 (질문과 유사) ===\n\n';
         
         for (const view of matchedViews) {
+          selectedTables.push(view.tableName);
           viewContext += `View: ${view.schemaName}.${view.tableName} [VIEW]`;
           if (view.description) viewContext += ` -- ${view.description}`;
           viewContext += '\n';
@@ -891,10 +893,11 @@ export class MetadataService {
       if (!results || results.length === 0) {
         if (viewContext) {
           // Return only view context if no vector results
-          return viewContext;
+          return { context: viewContext, tables: selectedTables };
         }
         this.logger.warn(`No vector search results found for DataSource ${dataSourceId}. Falling back to full schema.`);
-        return this.getSchemaContext(dataSourceId);
+        const fullContext = await this.getSchemaContext(dataSourceId);
+        return { context: fullContext, tables: [] };
       }
 
       // 5. Construct Context from results (with view context prepended)
@@ -908,14 +911,16 @@ export class MetadataService {
         const isAlreadyIncluded = matchedViews.some(v => v.tableName === row.tableName);
         if (!isAlreadyIncluded) {
           context += `${row.content}\n\n`;
+          selectedTables.push(row.tableName);
         }
       }
       
-      return context;
+      return { context, tables: selectedTables };
 
     } catch (error) {
        this.logger.error(`Vector search failed: ${error.message}. Falling back to full schema.`);
-       return this.getSchemaContext(dataSourceId);
+       const fullContext = await this.getSchemaContext(dataSourceId);
+       return { context: fullContext, tables: [] };
     }
   }
 
