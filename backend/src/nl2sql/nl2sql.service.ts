@@ -54,8 +54,19 @@ export class NL2SQLService {
     });
     const allowDDL = sqlSettings.find(s => s.key === 'sql_allow_ddl')?.value === true;
     
+    // Determine Top K limit from configuration
+    let topK = 10;
+    try {
+      const activeConfig = await this.prisma.embeddingConfig.findFirst({
+        where: { dataSourceId, isActive: true },
+      }) || await this.prisma.embeddingConfig.findFirst({
+        where: { dataSourceId: null, isActive: true },
+      });
+      if (activeConfig?.topK) topK = activeConfig.topK;
+    } catch (e) { this.logger.warn(`Failed to fetch embedding config: ${e.message}`); }
+
     // Use Vector Search for scalable schema retrieval
-    const schemaSearch = await this.metadataService.searchSchemaContext(dataSourceId, question);
+    const schemaSearch = await this.metadataService.searchSchemaContext(dataSourceId, question, topK);
     let schemaContext = schemaSearch.context;
 
     if (schemaSearch.tables && schemaSearch.tables.length > 0) {

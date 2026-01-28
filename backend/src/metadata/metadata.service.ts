@@ -887,7 +887,7 @@ export class MetadataService {
         JOIN "TableMetadata" t ON s."tableId" = t."id"
         WHERE t."dataSourceId" = ${dataSourceId}
         ORDER BY distance ASC
-        LIMIT ${limit}
+        LIMIT ${limit * 2}
       `;
 
       if (!results || results.length === 0) {
@@ -907,6 +907,12 @@ export class MetadataService {
       }
       
       for (const row of results) {
+        if (selectedTables.length >= limit) break;
+
+        // Filter system tables and low relevance results
+        if (row.tableName.startsWith('_') || row.tableName.startsWith('pg_')) continue;
+        if (row.distance > 0.45) continue; // Threshold: Similarity > 0.55
+
         // Skip if this table was already included as a matched view
         const isAlreadyIncluded = matchedViews.some(v => v.tableName === row.tableName);
         if (!isAlreadyIncluded) {
