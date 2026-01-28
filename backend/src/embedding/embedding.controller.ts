@@ -153,5 +153,10 @@ export class EmbeddingController {
     await this.embeddingService.syncSampleQueryEmbedding(sampleQueryId);
     return { success: true, message: 'Sample query embedding synced' };
   }
+
+  @Post('sync/all')
+  async syncAllEmbeddings() {
+    return this.embeddingService.syncAllEmbeddings();
+  }
 }
 

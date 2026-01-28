@@ -155,6 +155,18 @@ export default function EmbeddingManagementPage() {
     onError: () => toast({ title: '작업 실패', variant: 'destructive' }),
   });
 
+  const syncMetadataMutation = useMutation({
+    mutationFn: () => api.syncAllEmbeddings(),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['embeddableItems'] });
+      toast({
+        title: '메타데이터 동기화 완료',
+        description: `동기화: ${data.synced}건, 오류: ${data.errors}건`,
+      });
+    },
+    onError: () => toast({ title: '동기화 실패', variant: 'destructive' }),
+  });
+
   const batchEmbedMutation = useMutation({
     mutationFn: (options?: { dataSourceId?: string; forceRegenerate?: boolean }) =>
       api.batchGenerateEmbeddings(options),
@@ -608,6 +620,18 @@ export default function EmbeddingManagementPage() {
                 </p>
               </div>
               <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => syncMetadataMutation.mutate()}
+                  disabled={syncMetadataMutation.isPending}
+                >
+                  {syncMetadataMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Database className="h-4 w-4 mr-2" />
+                  )}
+                  메타데이터 동기화
+                </Button>
                 <Button
                   variant="outline"
                   onClick={() => batchEmbedMutation.mutate({})}

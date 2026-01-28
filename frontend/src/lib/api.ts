@@ -867,6 +867,10 @@ class ApiClient {
   }) {
     return this.request<{ context: string }>('/embedding/search/schema', { method: 'POST', body: data });
   }
+
+  async syncAllEmbeddings() {
+    return this.request<{ synced: number; errors: number }>('/embedding/sync/all', { method: 'POST' });
+  }
 }
 
 export const api = new ApiClient();

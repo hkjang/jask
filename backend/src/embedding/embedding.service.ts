@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, HttpException, HttpStatus } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { LLMService } from '../llm/llm.service';
 import { createHash } from 'crypto';
@@ -911,7 +911,7 @@ export class EmbeddingService {
             contentHash,
             tokens,
             tokenCount: tokens.length,
-            dataSourceId: sampleQuery.dataSourceId,
+            dataSourceId: null, // Global SampleQuery, or sampleQuery.dataSourceId if it exists
             metadata: { tags: sampleQuery.tags },
           },
         });
@@ -919,6 +919,43 @@ export class EmbeddingService {
     } catch (error) {
       this.logger.error(`Failed to sync sample query embedding for ${sampleQueryId}: ${error.message}`);
     }
+  }
+
+  /**
+   * 모든 데이터소스 및 샘플 쿼리에 대해 EmbeddableItem 동기화
+   */
+  async syncAllEmbeddings(): Promise<{ synced: number; errors: number }> {
+    let synced = 0;
+    let errors = 0;
+
+    // 1. 모든 데이터소스 동기화
+    const dataSources = await this.prisma.dataSource.findMany({
+      where: { isActive: true },
+      select: { id: true },
+    });
+
+    for (const ds of dataSources) {
+      const result = await this.syncDataSourceEmbeddings(ds.id);
+      synced += result.synced;
+      errors += result.errors;
+    }
+
+    // 2. 모든 샘플 쿼리 동기화
+    const sampleQueries = await this.prisma.sampleQuery.findMany({
+      select: { id: true },
+    });
+
+    for (const sq of sampleQueries) {
+      try {
+        await this.syncSampleQueryEmbedding(sq.id);
+        synced++;
+      } catch (error) {
+        errors++;
+      }
+    }
+
+    this.logger.log(`Total embedding sync complete: ${synced} synced, ${errors} errors`);
+    return { synced, errors };
   }
 }
 

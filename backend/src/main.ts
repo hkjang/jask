@@ -3,6 +3,8 @@ import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 
+import { GlobalExceptionFilter } from './global-exception.filter';
+
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
@@ -14,6 +16,9 @@ async function bootstrap() {
     origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
     credentials: true,
   });
+
+  // Global Filter
+  app.useGlobalFilters(new GlobalExceptionFilter());
 
   // Validation
   app.useGlobalPipes(
