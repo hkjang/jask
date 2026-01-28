@@ -96,7 +96,7 @@ Note: This database currently has no tables. You can create new tables.`;
     
     let dbSpecificRules = '';
     if (dbType.toLowerCase().includes('postgres')) {
-      dbSpecificRules = '6. You MUST wrap ALL table and column names in DOUBLE QUOTES (e.g. "TableName", "rowCount", "userId"). PostgreSQL is case-sensitive for mixed-case identifiers. Do NOT use unquoted camelCase.';
+      dbSpecificRules = '6. You MUST wrap ALL table and column names in DOUBLE QUOTES (e.g. "TableName", "rowCount", "userId"). PostgreSQL is case-sensitive for mixed-case identifiers. Do NOT use unquoted camelCase.\n7. Do NOT use Oracle functions like SYSDATE, NVL. Use NOW(), COALESCE.';
     } else if (dbType.toLowerCase().includes('oracle')) {
       dbSpecificRules = `6. For Oracle database:
 - Use VARCHAR2 instead of VARCHAR

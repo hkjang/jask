@@ -126,7 +126,7 @@ export class LLMService {
     
     let dbSpecificRules = '';
     if (dbType.toLowerCase().includes('postgres')) {
-      dbSpecificRules = '6. You MUST wrap all table and column names in DOUBLE QUOTES (e.g. "TableName", "ColumnName"). This is CRITICAL for PostgreSQL.';
+      dbSpecificRules = '6. You MUST wrap all table and column names in DOUBLE QUOTES (e.g. "TableName", "ColumnName"). This is CRITICAL for PostgreSQL.\n7. Do NOT use Oracle functions like SYSDATE, NVL, DECODE. Use NOW() or CURRENT_TIMESTAMP, COALESCE, CASE WHEN instead.';
     } else if (dbType.toLowerCase().includes('mysql') || dbType.toLowerCase().includes('mariadb')) {
       dbSpecificRules = '6. You MUST wrap all table and column names in BACKTICKS (e.g. `TableName`, `ColumnName`).';
     }
@@ -158,7 +158,7 @@ ${schemaContext}`;
   async fixSQL(invalidSql: string, errorMessage: string, schemaContext: string, dbType: string = 'postgresql'): Promise<string> {
     let dbSpecificRules = '';
     if (dbType.toLowerCase().includes('postgres')) {
-      dbSpecificRules = '\n6. CRITICAL: You MUST wrap ALL table and column names in DOUBLE QUOTES (e.g. "TableName", "columnName"). PostgreSQL is case-sensitive for unquoted identifiers.';
+      dbSpecificRules = '\n6. CRITICAL: You MUST wrap ALL table and column names in DOUBLE QUOTES (e.g. "TableName", "columnName"). PostgreSQL is case-sensitive for unquoted identifiers.\n7. Do NOT use SYSDATE, NVL. Use NOW(), COALESCE.';
     } else if (dbType.toLowerCase().includes('mysql') || dbType.toLowerCase().includes('mariadb')) {
       dbSpecificRules = '\n6. You MUST wrap all table and column names in BACKTICKS (e.g. `TableName`, `ColumnName`).';
     } else if (dbType.toLowerCase().includes('oracle')) {
