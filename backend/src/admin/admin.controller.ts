@@ -224,8 +224,26 @@ export class AdminController {
   // ==========================================
   @Get('recommended-questions')
   @ApiOperation({ summary: '추천 질문 목록' })
-  getRecommendedQuestions(@Query('dataSourceId') dataSourceId?: string) {
-    return this.adminService.getRecommendedQuestions(dataSourceId);
+  getRecommendedQuestions(
+    @Query('dataSourceId') dataSourceId?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('search') search?: string,
+    @Query('source') source?: string,
+  ) {
+    return this.adminService.getRecommendedQuestions(
+      dataSourceId,
+      page ? parseInt(page) : 1,
+      limit ? parseInt(limit) : 20,
+      search,
+      source,
+    );
+  }
+
+  @Get('recommended-questions/stats')
+  @ApiOperation({ summary: '추천 질문 통계' })
+  getRecommendedQuestionsStats(@Query('dataSourceId') dataSourceId?: string) {
+    return this.adminService.getRecommendedQuestionsStats(dataSourceId);
   }
 
   @Get('recommended-questions/:id')
@@ -263,6 +281,7 @@ export class AdminController {
   toggleRecommendedQuestion(@Param('id') id: string) {
     return this.adminService.toggleRecommendedQuestion(id);
   }
+
 
   @Post('recommended-questions/generate')
   @ApiOperation({ summary: 'AI로 추천 질문 생성' })

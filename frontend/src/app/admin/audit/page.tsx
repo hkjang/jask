@@ -855,6 +855,36 @@ export default function AuditLogsPage() {
                     </TableBody>
                   </Table>
                 )}
+
+                {/* Alert Pagination */}
+                {alertsData && alertsData.totalPages > 1 && (
+                  <div className="flex items-center justify-between px-4 py-3 border-t">
+                    <p className="text-sm text-muted-foreground">
+                      총 {alertsData.total}개 중 {(alertPage - 1) * 20 + 1}-{Math.min(alertPage * 20, alertsData.total)}
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setAlertPage(p => Math.max(1, p - 1))}
+                        disabled={alertPage === 1}
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                      </Button>
+                      <span className="text-sm">
+                        {alertPage} / {alertsData.totalPages}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setAlertPage(p => Math.min(alertsData.totalPages, p + 1))}
+                        disabled={alertPage >= alertsData.totalPages}
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>

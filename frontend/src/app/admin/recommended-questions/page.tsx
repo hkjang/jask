@@ -66,9 +66,11 @@ import {
   Trash,
   CheckSquare,
   Square,
-  XCircle
+  XCircle,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 
 interface RecommendedQuestion {
   id: string;
@@ -102,6 +104,8 @@ export default function AdminRecommendedQuestionsPage() {
   const [selectedDataSource, setSelectedDataSource] = useState<string>('all');
   const [selectedSource, setSelectedSource] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [page, setPage] = useState(1);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingQuestion, setEditingQuestion] = useState<RecommendedQuestion | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -125,12 +129,43 @@ export default function AdminRecommendedQuestionsPage() {
     },
   });
 
+  // Debounce search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+      setPage(1); // Reset page on search
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // Reset page when filters change
+  useEffect(() => {
+    setPage(1);
+  }, [selectedDataSource, selectedSource]);
+
   // Fetch Recommended Questions
-  const { data: questions = [], isLoading, refetch } = useQuery({
-    queryKey: ['adminRecommendedQuestions', selectedDataSource],
+  const { data: questionsData, isLoading, refetch } = useQuery({
+    queryKey: ['adminRecommendedQuestions', selectedDataSource, page, debouncedSearch, selectedSource],
     queryFn: async () => {
-      const dataSourceId = selectedDataSource === 'all' ? undefined : selectedDataSource;
-      return api.getAdminRecommendedQuestions(dataSourceId);
+      return api.getAdminRecommendedQuestions({
+        dataSourceId: selectedDataSource === 'all' ? undefined : selectedDataSource,
+        page,
+        limit: 20,
+        search: debouncedSearch || undefined,
+        source: selectedSource === 'all' ? undefined : selectedSource,
+      });
+    },
+  });
+
+  const questions = questionsData?.items || [];
+
+  // Fetch stats (for dashboard cards)
+  const { data: statsData } = useQuery({
+    queryKey: ['adminRecommendedQuestionsStats', selectedDataSource],
+    queryFn: async () => {
+      return api.getAdminRecommendedQuestionsStats(
+        selectedDataSource === 'all' ? undefined : selectedDataSource
+      );
     },
   });
 
@@ -240,29 +275,8 @@ export default function AdminRecommendedQuestionsPage() {
     generateMutation.mutate(selectedDataSource);
   };
 
-  // Filtering logic
-  const filteredQuestions = useMemo(() => {
-    return questions.filter((q: RecommendedQuestion) => {
-      // Source filter
-      if (selectedSource !== 'all' && q.source !== selectedSource) return false;
-      // Search filter
-      if (searchQuery) {
-        const query = searchQuery.toLowerCase();
-        return (
-          q.question.toLowerCase().includes(query) ||
-          q.category?.toLowerCase().includes(query) ||
-          q.createdByName?.toLowerCase().includes(query) ||
-          q.tags.some(t => t.toLowerCase().includes(query))
-        );
-      }
-      return true;
-    });
-  }, [questions, selectedSource, searchQuery]);
-
-  const activeQuestions = filteredQuestions.filter((q: RecommendedQuestion) => q.isActive);
-  const inactiveQuestions = filteredQuestions.filter((q: RecommendedQuestion) => !q.isActive);
-  const queryPageQuestions = questions.filter((q: RecommendedQuestion) => q.source === 'QUERY_PAGE');
-  const adminQuestions = questions.filter((q: RecommendedQuestion) => q.source === 'ADMIN');
+  // Server-side filtering is now used, so filteredQuestions = questions
+  const filteredQuestions = questions;
 
   // Bulk actions
   const toggleSelectAll = () => {
@@ -451,7 +465,7 @@ export default function AdminRecommendedQuestionsPage() {
                     <ToggleRight className="h-5 w-5 text-green-600" />
                   </div>
                   <div>
-                    <p className="text-2xl font-bold">{activeQuestions.length}</p>
+                    <p className="text-2xl font-bold">{statsData?.active || 0}</p>
                     <p className="text-xs text-muted-foreground">활성 질문</p>
                   </div>
                 </div>
@@ -464,7 +478,7 @@ export default function AdminRecommendedQuestionsPage() {
                     <ToggleLeft className="h-5 w-5 text-gray-500" />
                   </div>
                   <div>
-                    <p className="text-2xl font-bold">{inactiveQuestions.length}</p>
+                    <p className="text-2xl font-bold">{statsData?.inactive || 0}</p>
                     <p className="text-xs text-muted-foreground">비활성 질문</p>
                   </div>
                 </div>
@@ -477,7 +491,7 @@ export default function AdminRecommendedQuestionsPage() {
                     <Monitor className="h-5 w-5 text-cyan-600" />
                   </div>
                   <div>
-                    <p className="text-2xl font-bold">{queryPageQuestions.length}</p>
+                    <p className="text-2xl font-bold">{statsData?.bySource?.queryPage || 0}</p>
                     <p className="text-xs text-muted-foreground">질문 페이지</p>
                   </div>
                 </div>
@@ -490,7 +504,7 @@ export default function AdminRecommendedQuestionsPage() {
                     <Settings className="h-5 w-5 text-orange-600" />
                   </div>
                   <div>
-                    <p className="text-2xl font-bold">{adminQuestions.length}</p>
+                    <p className="text-2xl font-bold">{statsData?.bySource?.admin || 0}</p>
                     <p className="text-xs text-muted-foreground">관리자 생성</p>
                   </div>
                 </div>
@@ -503,9 +517,7 @@ export default function AdminRecommendedQuestionsPage() {
                     <Bot className="h-5 w-5 text-purple-600" />
                   </div>
                   <div>
-                    <p className="text-2xl font-bold">
-                      {questions.filter((q: RecommendedQuestion) => q.isAIGenerated).length}
-                    </p>
+                    <p className="text-2xl font-bold">{statsData?.aiGenerated || 0}</p>
                     <p className="text-xs text-muted-foreground">AI 생성</p>
                   </div>
                 </div>
@@ -518,9 +530,7 @@ export default function AdminRecommendedQuestionsPage() {
                     <TrendingUp className="h-5 w-5 text-blue-600" />
                   </div>
                   <div>
-                    <p className="text-2xl font-bold">
-                      {questions.reduce((sum: number, q: RecommendedQuestion) => sum + q.useCount, 0)}
-                    </p>
+                    <p className="text-2xl font-bold">{statsData?.totalUseCount || 0}</p>
                     <p className="text-xs text-muted-foreground">총 사용 횟수</p>
                   </div>
                 </div>
@@ -679,6 +689,7 @@ export default function AdminRecommendedQuestionsPage() {
               </CardContent>
             </Card>
           ) : (
+            <>
             <div className="grid gap-4">
               {filteredQuestions.map((question: RecommendedQuestion) => (
                 <Card key={question.id} className={`transition-all ${!question.isActive ? 'opacity-60 bg-muted/30' : ''} ${selectedIds.has(question.id) ? 'ring-2 ring-primary' : ''}`}>
@@ -814,7 +825,38 @@ export default function AdminRecommendedQuestionsPage() {
                 </Card>
               ))}
             </div>
-          )}
+
+            {/* Pagination */}
+            {questionsData && questionsData.totalPages > 1 && (
+              <div className="flex items-center justify-between px-4 py-4 mt-6 rounded-lg border bg-card">
+                <p className="text-sm text-muted-foreground">
+                  총 {questionsData.total}개 중 {(page - 1) * 20 + 1}-{Math.min(page * 20, questionsData.total)}
+                </p>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPage(p => Math.max(1, p - 1))}
+                    disabled={page === 1}
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <span className="text-sm">
+                    {page} / {questionsData.totalPages}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPage(p => Math.min(questionsData.totalPages, p + 1))}
+                    disabled={page >= questionsData.totalPages}
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            )}
+          </>
+        )}
         </div>
       </TooltipProvider>
     </MainLayout>

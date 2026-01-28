@@ -560,14 +560,95 @@ export class AdminService {
   // ==========================================
   // 추천 질문 관리
   // ==========================================
-  async getRecommendedQuestions(dataSourceId?: string) {
-    return this.prisma.recommendedQuestion.findMany({
-      where: dataSourceId ? { dataSourceId } : undefined,
-      orderBy: [{ displayOrder: 'asc' }, { createdAt: 'desc' }],
-      include: {
-        dataSource: { select: { id: true, name: true, type: true } },
+  async getRecommendedQuestions(
+    dataSourceId?: string,
+    page = 1,
+    limit = 20,
+    search?: string,
+    source?: string,
+  ) {
+    const where: any = {};
+
+    if (dataSourceId) {
+      where.dataSourceId = dataSourceId;
+    }
+
+    if (source) {
+      where.source = source;
+    }
+
+    if (search) {
+      where.OR = [
+        { question: { contains: search, mode: 'insensitive' } },
+        { category: { contains: search, mode: 'insensitive' } },
+        { description: { contains: search, mode: 'insensitive' } },
+        { tags: { has: search } },
+      ];
+    }
+
+    const [items, total] = await Promise.all([
+      this.prisma.recommendedQuestion.findMany({
+        where,
+        orderBy: [{ displayOrder: 'asc' }, { createdAt: 'desc' }],
+        skip: (page - 1) * limit,
+        take: limit,
+        include: {
+          dataSource: { select: { id: true, name: true, type: true } },
+        },
+      }),
+      this.prisma.recommendedQuestion.count({ where }),
+    ]);
+
+    return {
+      items,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
+  }
+
+  async getRecommendedQuestionsStats(dataSourceId?: string) {
+    const where: any = {};
+    if (dataSourceId) {
+      where.dataSourceId = dataSourceId;
+    }
+
+    const [
+      totalCount,
+      activeCount,
+      inactiveCount,
+      aiGeneratedCount,
+      queryPageCount,
+      adminCount,
+      systemCount,
+      totalUseCount,
+    ] = await Promise.all([
+      this.prisma.recommendedQuestion.count({ where }),
+      this.prisma.recommendedQuestion.count({ where: { ...where, isActive: true } }),
+      this.prisma.recommendedQuestion.count({ where: { ...where, isActive: false } }),
+      this.prisma.recommendedQuestion.count({ where: { ...where, isAIGenerated: true } }),
+      this.prisma.recommendedQuestion.count({ where: { ...where, source: 'QUERY_PAGE' } }),
+      this.prisma.recommendedQuestion.count({ where: { ...where, source: 'ADMIN' } }),
+      this.prisma.recommendedQuestion.count({ where: { ...where, source: 'SYSTEM' } }),
+      this.prisma.recommendedQuestion.aggregate({
+        where,
+        _sum: { useCount: true },
+      }),
+    ]);
+
+    return {
+      total: totalCount,
+      active: activeCount,
+      inactive: inactiveCount,
+      aiGenerated: aiGeneratedCount,
+      bySource: {
+        queryPage: queryPageCount,
+        admin: adminCount,
+        system: systemCount,
       },
-    });
+      totalUseCount: totalUseCount._sum.useCount || 0,
+    };
   }
 
   async getRecommendedQuestion(id: string) {

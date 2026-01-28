@@ -458,9 +458,21 @@ class ApiClient {
   }
 
   // Recommended Questions Management
-  async getAdminRecommendedQuestions(dataSourceId?: string) {
-    const query = dataSourceId ? `?dataSourceId=${dataSourceId}` : '';
-    return this.request<any[]>(`/admin/recommended-questions${query}`);
+  async getAdminRecommendedQuestions(options?: {
+    dataSourceId?: string;
+    page?: number;
+    limit?: number;
+    search?: string;
+    source?: string;
+  }) {
+    const params = new URLSearchParams();
+    if (options?.dataSourceId) params.append('dataSourceId', options.dataSourceId);
+    if (options?.page) params.append('page', options.page.toString());
+    if (options?.limit) params.append('limit', options.limit.toString());
+    if (options?.search) params.append('search', options.search);
+    if (options?.source) params.append('source', options.source);
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return this.request<{ items: any[]; total: number; page: number; limit: number; totalPages: number }>(`/admin/recommended-questions${query}`);
   }
 
   async createAdminRecommendedQuestion(data: {
@@ -490,6 +502,18 @@ class ApiClient {
       '/admin/recommended-questions/generate',
       { method: 'POST', body: { dataSourceId, count } }
     );
+  }
+
+  async getAdminRecommendedQuestionsStats(dataSourceId?: string) {
+    const query = dataSourceId ? `?dataSourceId=${dataSourceId}` : '';
+    return this.request<{
+      total: number;
+      active: number;
+      inactive: number;
+      aiGenerated: number;
+      bySource: { queryPage: number; admin: number; system: number };
+      totalUseCount: number;
+    }>(`/admin/recommended-questions/stats${query}`);
   }
 
 
