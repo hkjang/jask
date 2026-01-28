@@ -1,10 +1,11 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { DataSourcesService } from '../datasources/datasources.service';
 import { Client as PgClient } from 'pg';
 import * as mysql from 'mysql2/promise';
 import oracledb from 'oracledb';
 import { LLMService } from '../llm/llm.service';
+import { EmbeddingService } from '../embedding/embedding.service';
 import { 
   UpdateTableMetadataDto, 
   UpdateColumnMetadataDto, 
@@ -44,6 +45,8 @@ export class MetadataService {
     private prisma: PrismaService,
     private dataSourcesService: DataSourcesService,
     private llmService: LLMService,
+    @Inject(forwardRef(() => EmbeddingService))
+    private embeddingService: EmbeddingService,
   ) {}
 
   async syncMetadata(dataSourceId: string): Promise<{ tables: number; columns: number }> {
@@ -129,6 +132,12 @@ export class MetadataService {
           },
         });
       }
+
+
+      // 임베딩 자동 동기화 (비동기로 실행하여 응답 속도 저하 방지)
+      this.embeddingService.syncTableEmbedding(savedTable.id).catch(err => {
+        this.logger.warn(`Failed to sync embedding for table ${savedTable.tableName}: ${err.message}`);
+      });
     }
 
     const totalColumns = Array.from(allColumns.values()).reduce((sum, cols) => sum + cols.length, 0);

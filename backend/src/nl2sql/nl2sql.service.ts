@@ -491,17 +491,40 @@ ${schemaContext}`;
   async generateAndExecute(request: NL2SQLRequest): Promise<NL2SQLResponse> {
     const { dataSourceId, question, userId, autoExecute = false, threadId } = request;
 
-    // 1. 스키마 컨텍스트 조회
-    const schemaContext = await this.metadataService.getSchemaContext(dataSourceId);
-    if (!schemaContext || schemaContext.trim() === '') {
-      throw new BadRequestException('데이터소스의 메타데이터를 먼저 동기화해주세요.');
-    }
-
-    // Fetch DataSource to determine type
+    // 1. 스키마 컨텍스트 조회 (Vector Search for Scalability)
+    // Fetch DataSource to determine type first (needed for some logic, but searchSchemaContext handles context)
     const dataSource = await this.prisma.dataSource.findUnique({
       where: { id: dataSourceId },
     });
     const dbType = dataSource?.type || 'postgresql';
+
+    // Determine Top K
+    let topK = 20;
+    try {
+      const activeConfig = await this.prisma.embeddingConfig.findFirst({
+        where: { dataSourceId, isActive: true },
+      }) || await this.prisma.embeddingConfig.findFirst({
+        where: { dataSourceId: null, isActive: true },
+      });
+      if (activeConfig?.topK) topK = activeConfig.topK;
+    } catch (e) { this.logger.warn(`Failed to fetch config: ${e.message}`); }
+
+    const schemaSearch = await this.metadataService.searchSchemaContext(dataSourceId, question, topK);
+    let schemaContext = schemaSearch.context;
+
+    if (!schemaContext || schemaContext.trim() === '') {
+      // Fallback for DDL
+      const sqlSettings = await this.prisma.systemSettings.findMany({
+          where: { key: { in: ['sql_allow_ddl'] } }
+      });
+      const allowDDL = sqlSettings.find(s => s.key === 'sql_allow_ddl')?.value === true;
+
+      if (allowDDL) {
+         schemaContext = `Database: ${dataSource?.database || 'unknown'}\nNote: Empty database.`;
+      } else {
+         throw new BadRequestException('데이터소스의 메타데이터를 먼저 동기화해주세요.');
+      }
+    }
 
     // 2. 쿼리 히스토리 생성
     const queryHistory = await this.prisma.queryHistory.create({
