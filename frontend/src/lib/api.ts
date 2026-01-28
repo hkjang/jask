@@ -552,6 +552,11 @@ class ApiClient {
     return this.request<any[]>(`/metadata/tables/${dataSourceId}`);
   }
 
+  async getTableInfoByName(dataSourceId: string, tableName: string) {
+    const params = new URLSearchParams({ dataSourceId, tableName });
+    return this.request<any>(`/metadata/table-info?${params.toString()}`);
+  }
+
   async previewTableData(tableId: string) {
     return this.request<any[]>(`/metadata/tables/${tableId}/preview`);
   }

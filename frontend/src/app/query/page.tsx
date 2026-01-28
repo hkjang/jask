@@ -593,6 +593,12 @@ function QueryPageContent() {
 
 
 
+  // Helper for opening table schema
+  const handleTableClick = (tableName: string) => {
+    // Fake SQL to trigger the viewer logic
+    setSchemaViewerSql(`SELECT * FROM ${tableName}`);
+  };
+
   const handleSend = async () => {
     if (!input.trim()) return;
     if (!selectedDataSource) {
@@ -948,7 +954,14 @@ function QueryPageContent() {
                       <div className="flex flex-wrap gap-1 mb-2 px-1">
                         <span className="text-xs text-muted-foreground self-center mr-1">참조 테이블:</span>
                         {message.selectedTables.map(t => (
-                           <Badge variant="secondary" className="text-[10px] h-5 px-1.5 font-mono" key={t}>{t}</Badge>
+                           <Badge 
+                             variant="secondary" 
+                             className="text-[10px] h-5 px-1.5 font-mono cursor-pointer hover:bg-muted-foreground/20 transition-colors" 
+                             key={t}
+                             onClick={() => handleTableClick(t)}
+                           >
+                             {t}
+                           </Badge>
                         ))}
                       </div>
                     )}
@@ -1006,6 +1019,24 @@ function QueryPageContent() {
                               remarkPlugins={[remarkGfm]}
                               rehypePlugins={[rehypeRaw]}
                               components={{
+                                a: ({ node, href, children, ...props }: any) => {
+                                  if (href?.startsWith('table:')) {
+                                    const tableName = href.replace('table:', '');
+                                    return (
+                                      <span
+                                        onClick={() => handleTableClick(tableName)}
+                                        className="cursor-pointer font-medium text-primary hover:underline"
+                                      >
+                                        {children}
+                                      </span>
+                                    );
+                                  }
+                                  return (
+                                    <a href={href} className="text-primary hover:underline" target="_blank" rel="noopener noreferrer" {...props}>
+                                      {children}
+                                    </a>
+                                  );
+                                },
                                 table: ({ node, ...props }) => (
                                   <div className="overflow-x-auto my-2 border rounded-md bg-background">
                                     <table className="w-full text-sm" {...props} />

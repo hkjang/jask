@@ -1,4 +1,4 @@
-import { Controller, Post, Put, Get, Delete, Patch, Body, Param, UseGuards, UploadedFile, UseInterceptors, Res, StreamableFile } from '@nestjs/common';
+import { Controller, Post, Put, Get, Delete, Patch, Body, Param, Query, UseGuards, UploadedFile, UseInterceptors, Res, StreamableFile } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes, ApiBody } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -64,6 +64,15 @@ export class MetadataController {
   @ApiOperation({ summary: '테이블 목록 조회' })
   async getTables(@Param('dataSourceId') dataSourceId: string) {
     return this.metadataService.getTables(dataSourceId);
+  }
+
+  @Get('table-info')
+  @ApiOperation({ summary: '테이블 상세 정보 조회 (이름 기반)' })
+  async getTableInfoByName(
+    @Query('dataSourceId') dataSourceId: string,
+    @Query('tableName') tableName: string,
+  ) {
+    return this.metadataService.getTableInfoByName(dataSourceId, tableName);
   }
 
   @Get('tables/:tableId/preview')

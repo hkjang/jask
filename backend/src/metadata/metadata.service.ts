@@ -930,6 +930,42 @@ export class MetadataService {
     }
   }
 
+  async getTableInfoByName(dataSourceId: string, tableName: string) {
+    // Check if tableName has schema (e.g. public.users)
+    let table = tableName;
+    let schemaSchema: string | undefined;
+    
+    if (tableName.includes('.')) {
+        const parts = tableName.split('.');
+        if (parts.length === 2) {
+             table = parts[1];
+             schemaSchema = parts[0];
+        }
+    }
+    
+    // Find table
+    const where: any = {
+        dataSourceId,
+        tableName: { equals: table, mode: 'insensitive' }
+    };
+    
+    if (schemaSchema) {
+        where.schemaName = { equals: schemaSchema, mode: 'insensitive' };
+    }
+
+    const found = await this.prisma.tableMetadata.findFirst({
+        where,
+        include: {
+            columns: {
+               orderBy: { columnName: 'asc' },
+               include: { codeValueList: true }
+            }
+        }
+    });
+
+    return found;
+  }
+
   // ===========================================
   // Simulation Helper - Detailed Schema Search
   // ===========================================

@@ -72,6 +72,10 @@ export class NL2SQLService {
     if (schemaSearch.tables && schemaSearch.tables.length > 0) {
       this.logger.log(`[Schema Search] Selected tables: ${schemaSearch.tables.join(', ')}`);
       yield { type: 'context_selected', tables: schemaSearch.tables };
+      
+      // Persist in message content for history
+      const tableLinks = schemaSearch.tables.map(t => `[${t}](table:${t})`).join(', ');
+      yield { type: 'content_chunk', content: `**참조 테이블**: ${tableLinks}\n\n` };
     }
     
     // If schema is empty but DDL is allowed, provide minimal context for DDL queries
