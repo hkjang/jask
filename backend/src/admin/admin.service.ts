@@ -25,13 +25,21 @@ export class AdminService {
     name: string;
     baseUrl: string;
     model: string;
+    embeddingModel?: string;
+    embeddingBaseUrl?: string;
     apiKey?: string;
     isDefault?: boolean;
+    isEmbeddingDefault?: boolean;
     config?: any;
   }) {
     if (data.isDefault) {
       await this.prisma.lLMProvider.updateMany({
         data: { isDefault: false },
+      });
+    }
+    if (data.isEmbeddingDefault) {
+      await this.prisma.lLMProvider.updateMany({
+        data: { isEmbeddingDefault: false },
       });
     }
 
@@ -41,14 +49,22 @@ export class AdminService {
   async updateLLMProvider(id: string, data: Partial<{
     baseUrl: string;
     model: string;
+    embeddingModel: string;
+    embeddingBaseUrl: string;
     apiKey: string;
     isActive: boolean;
     isDefault: boolean;
+    isEmbeddingDefault: boolean;
     config: any;
   }>) {
     if (data.isDefault) {
       await this.prisma.lLMProvider.updateMany({
         data: { isDefault: false },
+      });
+    }
+    if (data.isEmbeddingDefault) {
+      await this.prisma.lLMProvider.updateMany({
+        data: { isEmbeddingDefault: false },
       });
     }
 

@@ -471,9 +471,12 @@ model LLMProvider {
   name        String   @unique  // ollama, vllm, openai
   baseUrl     String
   model       String
+  embeddingModel   String?  // 임베딩 모델 (예: nomic-embed-text, bge-m3)
+  embeddingBaseUrl String?  // 임베딩 전용 baseUrl (선택, 미지정시 baseUrl 사용)
   apiKey      String?  @db.Text
   isActive    Boolean  @default(true)
-  isDefault   Boolean  @default(false)
+  isDefault   Boolean  @default(false)  // 채팅용 기본 프로바이더
+  isEmbeddingDefault Boolean @default(false)  // 임베딩용 기본 프로바이더
   config      Json?    // temperature, max_tokens 등
 
   createdAt   DateTime @default(now())

@@ -70,15 +70,21 @@ export class LLMService {
   }
 
   async generateEmbedding(text: string, providerId?: string): Promise<number[]> {
-    const provider = await this.getActiveProvider(providerId);
+    // Use embedding-specific provider if available
+    const provider = await this.getActiveEmbeddingProvider(providerId);
 
-    // Allow overriding the model for embeddings via environment variable
+    // Priority: provider's embeddingModel > environment variable > chat model
     // This is crucial because many chat models (like codellama, qwen) do not support embeddings well or at all.
-    const embeddingModel = this.configService.get<string>('EMBEDDING_MODEL');
+    const embeddingModel = provider.embeddingModel 
+      || this.configService.get<string>('EMBEDDING_MODEL')
+      || provider.model;
+    
+    // Use dedicated embedding baseUrl if available
+    const embeddingBaseUrl = provider.embeddingBaseUrl || provider.baseUrl;
     
     const providerConfig = {
-      baseUrl: provider.baseUrl,
-      model: embeddingModel || provider.model, // Use specific embedding model if set
+      baseUrl: embeddingBaseUrl,
+      model: embeddingModel,
       apiKey: provider.apiKey ?? undefined,
       config: provider.config,
     };
@@ -330,6 +336,8 @@ Rules:
     name: string;
     baseUrl: string;
     model: string;
+    embeddingModel?: string | null;
+    embeddingBaseUrl?: string | null;
     apiKey?: string | null;
     config: any;
   }> {
@@ -361,6 +369,62 @@ Rules:
       model: this.configService.get(
         defaultName === 'ollama' ? 'OLLAMA_MODEL' : 'VLLM_MODEL',
       ) || 'codellama:7b',
+      embeddingModel: this.configService.get<string>('EMBEDDING_MODEL') || undefined,
+      embeddingBaseUrl: undefined,
+      apiKey: undefined,
+      config: {},
+    };
+  }
+
+  private async getActiveEmbeddingProvider(providerId?: string): Promise<{
+    name: string;
+    baseUrl: string;
+    model: string;
+    embeddingModel?: string | null;
+    embeddingBaseUrl?: string | null;
+    apiKey?: string | null;
+    config: any;
+  }> {
+    // If specific provider is requested, use it
+    if (providerId) {
+      const provider = await this.prisma.lLMProvider.findUnique({
+        where: { id: providerId },
+      });
+      if (provider && provider.isActive) {
+        return provider;
+      }
+    }
+
+    // First, look for dedicated embedding provider (isEmbeddingDefault)
+    const embeddingProvider = await this.prisma.lLMProvider.findFirst({
+      where: { isEmbeddingDefault: true, isActive: true },
+    });
+
+    if (embeddingProvider) {
+      return embeddingProvider;
+    }
+
+    // Fallback to default chat provider
+    const defaultProvider = await this.prisma.lLMProvider.findFirst({
+      where: { isDefault: true, isActive: true },
+    });
+
+    if (defaultProvider) {
+      return defaultProvider;
+    }
+
+    // Fallback to environment config
+    const defaultName = this.configService.get('DEFAULT_LLM_PROVIDER', 'ollama');
+    return {
+      name: defaultName,
+      baseUrl: this.configService.get(
+        defaultName === 'ollama' ? 'OLLAMA_BASE_URL' : 'VLLM_BASE_URL',
+      ) || 'http://localhost:11434',
+      model: this.configService.get(
+        defaultName === 'ollama' ? 'OLLAMA_MODEL' : 'VLLM_MODEL',
+      ) || 'codellama:7b',
+      embeddingModel: this.configService.get<string>('EMBEDDING_MODEL') || undefined,
+      embeddingBaseUrl: undefined,
       apiKey: undefined,
       config: {},
     };

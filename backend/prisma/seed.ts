@@ -37,13 +37,18 @@ async function main() {
   // 3. 기본 LLM 프로바이더 설정
   const ollamaProvider = await prisma.lLMProvider.upsert({
     where: { name: 'ollama' },
-    update: {},
+    update: {
+      embeddingModel: 'bona/bge-m3-korean',
+      isEmbeddingDefault: true,
+    },
     create: {
       name: 'ollama',
       baseUrl: 'http://localhost:11434',
       model: 'gpt-oss:20b',
+      embeddingModel: 'bona/bge-m3-korean',
       isActive: true,
       isDefault: true,
+      isEmbeddingDefault: true,
     },
   });
   console.log('✅ Ollama provider created:', ollamaProvider.name);
@@ -57,6 +62,7 @@ async function main() {
       model: 'gptoss',
       isActive: false,
       isDefault: false,
+      isEmbeddingDefault: false,
     },
   });
   console.log('✅ vLLM provider created:', vllmProvider.name);

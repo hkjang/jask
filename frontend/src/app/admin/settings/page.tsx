@@ -57,9 +57,12 @@ interface LLMProvider {
   name: string;
   baseUrl: string;
   model: string;
+  embeddingModel?: string;
+  embeddingBaseUrl?: string;
   apiKey?: string;
   isActive: boolean;
   isDefault: boolean;
+  isEmbeddingDefault: boolean;
 }
 
 interface User {
@@ -133,9 +136,12 @@ export default function AdminSettingsPage() {
     name: '',
     baseUrl: '',
     model: '',
+    embeddingModel: '',
+    embeddingBaseUrl: '',
     apiKey: '',
     isActive: true,
     isDefault: false,
+    isEmbeddingDefault: false,
   });
 
   const [isSettingDialogOpen, setIsSettingDialogOpen] = useState(false);
@@ -260,7 +266,7 @@ export default function AdminSettingsPage() {
   });
 
   const resetProviderForm = () => {
-    setProviderForm({ name: '', baseUrl: '', model: '', apiKey: '', isActive: true, isDefault: false });
+    setProviderForm({ name: '', baseUrl: '', model: '', embeddingModel: '', embeddingBaseUrl: '', apiKey: '', isActive: true, isDefault: false, isEmbeddingDefault: false });
     setEditingProvider(null);
   };
 
@@ -270,9 +276,12 @@ export default function AdminSettingsPage() {
       name: provider.name,
       baseUrl: provider.baseUrl,
       model: provider.model,
+      embeddingModel: provider.embeddingModel || '',
+      embeddingBaseUrl: provider.embeddingBaseUrl || '',
       apiKey: provider.apiKey || '',
       isActive: provider.isActive,
       isDefault: provider.isDefault,
+      isEmbeddingDefault: provider.isEmbeddingDefault || false,
     });
     setIsProviderDialogOpen(true);
   };
@@ -393,7 +402,33 @@ export default function AdminSettingsPage() {
                         placeholder="OpenAI 호환 API 사용 시 입력"
                       />
                     </div>
-                    <div className="flex items-center justify-between pt-2">
+                    
+                    {/* 임베딩 모델 설정 */}
+                    <div className="border-t pt-4 mt-4">
+                      <h4 className="text-sm font-semibold mb-3 text-muted-foreground">임베딩 설정</h4>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium">임베딩 모델</label>
+                          <Input
+                            value={providerForm.embeddingModel}
+                            onChange={(e) => setProviderForm({ ...providerForm, embeddingModel: e.target.value })}
+                            placeholder="nomic-embed-text"
+                          />
+                          <p className="text-xs text-muted-foreground">테이블/컬럼 메타데이터 임베딩에 사용</p>
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium">임베딩 Base URL (선택)</label>
+                          <Input
+                            value={providerForm.embeddingBaseUrl}
+                            onChange={(e) => setProviderForm({ ...providerForm, embeddingBaseUrl: e.target.value })}
+                            placeholder="미설정 시 Base URL 사용"
+                          />
+                          <p className="text-xs text-muted-foreground">다른 서버에서 임베딩 생성 시</p>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="flex flex-wrap items-center justify-between gap-4 pt-2">
                       <div className="flex items-center gap-2">
                         <Switch
                           checked={providerForm.isActive}
@@ -406,7 +441,14 @@ export default function AdminSettingsPage() {
                           checked={providerForm.isDefault}
                           onCheckedChange={(checked) => setProviderForm({ ...providerForm, isDefault: checked })}
                         />
-                        <label className="text-sm">기본 프로바이더</label>
+                        <label className="text-sm">채팅 기본</label>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Switch
+                          checked={providerForm.isEmbeddingDefault}
+                          onCheckedChange={(checked) => setProviderForm({ ...providerForm, isEmbeddingDefault: checked })}
+                        />
+                        <label className="text-sm">임베딩 기본</label>
                       </div>
                     </div>
                   </div>
@@ -435,9 +477,10 @@ export default function AdminSettingsPage() {
                           <Zap className="h-5 w-5" />
                         </div>
                         <div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <p className="font-semibold">{provider.name}</p>
-                            {provider.isDefault && <Badge variant="default">기본</Badge>}
+                            {provider.isDefault && <Badge variant="default">채팅</Badge>}
+                            {provider.isEmbeddingDefault && <Badge variant="outline" className="border-purple-500 text-purple-600">임베딩</Badge>}
                             {provider.isActive ? (
                               <Badge variant="success">활성</Badge>
                             ) : (
@@ -447,6 +490,14 @@ export default function AdminSettingsPage() {
                           <p className="text-sm text-muted-foreground mt-0.5">
                             {provider.baseUrl} · <code className="bg-muted px-1 rounded">{provider.model}</code>
                           </p>
+                          {provider.embeddingModel && (
+                            <p className="text-xs text-muted-foreground mt-1">
+                              임베딩: <code className="bg-muted px-1 rounded">{provider.embeddingModel}</code>
+                              {provider.embeddingBaseUrl && (
+                                <span className="ml-1">({provider.embeddingBaseUrl})</span>
+                              )}
+                            </p>
+                          )}
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
