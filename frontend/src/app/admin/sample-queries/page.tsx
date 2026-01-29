@@ -133,7 +133,7 @@ export default function AdminSampleQueriesPage() {
 
   return (
     <MainLayout>
-      <div className="container max-w-6xl py-8">
+      <div className="w-full px-6 py-8">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
           <div>
             <h1 className="text-3xl font-bold flex items-center gap-2">
