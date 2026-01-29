@@ -595,9 +595,12 @@ export default function AdminSampleQueriesPage() {
                                     </span>
                                 </div>
                                 <div className="bg-muted p-3 rounded-md overflow-x-auto">
-                                    <code className="text-sm font-mono text-muted-foreground whitespace-pre-wrap">
-                                        {query.sqlQuery}
-                                    </code>
+                                    <pre 
+                                        className="text-sm font-mono text-muted-foreground whitespace-pre-wrap"
+                                        dangerouslySetInnerHTML={{
+                                            __html: highlight(query.sqlQuery, languages.sql, 'sql')
+                                        }} 
+                                    />
                                 </div>
                                 {query.analysis && (
                                     <div className="mt-3 space-y-2">
