@@ -604,6 +604,58 @@ export class AdminService {
     };
   }
 
+  async exportSampleQueries(dataSourceId?: string) {
+    const where = dataSourceId ? { dataSourceId } : {};
+    return this.prisma.sampleQuery.findMany({
+      where,
+      select: {
+        dataSourceId: true,
+        naturalQuery: true,
+        sqlQuery: true,
+        category: true,
+        description: true,
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+  }
+
+  async importSampleQueries(queries: any[]) {
+    let successCount = 0;
+    let failCount = 0;
+
+    for (const q of queries) {
+      try {
+        // Validate required fields
+        if (!q.dataSourceId || !q.naturalQuery || !q.sqlQuery) {
+            failCount++;
+            continue;
+        }
+        
+        // Basic check if dataSource exists
+        const ds = await this.prisma.dataSource.findUnique({ where: { id: q.dataSourceId } });
+        if (!ds) {
+            failCount++;
+            continue; 
+        }
+
+        await this.prisma.sampleQuery.create({
+          data: {
+            dataSourceId: q.dataSourceId,
+            naturalQuery: q.naturalQuery,
+            sqlQuery: q.sqlQuery,
+            category: q.category || 'Imported',
+            description: q.description
+          }
+        });
+        successCount++;
+      } catch (e) {
+        failCount++;
+      }
+    }
+
+    return { success: successCount, failed: failCount };
+  }
+
   async getSampleQueryPrompts() {
     return this.llmService.getSampleQueryPrompts();
   }

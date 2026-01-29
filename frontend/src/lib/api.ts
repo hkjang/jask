@@ -425,8 +425,27 @@ class ApiClient {
 
   async generateAISampleQueries(dataSourceId: string, count: number = 5, tableNames?: string[]) {
     return this.request<{ generated: number; items: any[] }>(
-      '/admin/sample-queries/generate', 
+      '/admin/sample-queries/generate',
       { method: 'POST', body: { dataSourceId, count, tableNames } }
+    );
+  }
+
+  async exportSampleQueries(dataSourceId?: string) {
+    const query = dataSourceId ? `?dataSourceId=${dataSourceId}` : '';
+    const headers: Record<string, string> = {};
+    const token = this.getToken();
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`/api/admin/sample-queries/export${query}`, { headers });
+    if (!res.ok) throw new Error('Export failed');
+    return res.json();
+  }
+
+  async importSampleQueries(queries: any[]) {
+    return this.request<{ success: number; failed: number }>(
+      '/admin/sample-queries/import',
+      { method: 'POST', body: queries }
     );
   }
 

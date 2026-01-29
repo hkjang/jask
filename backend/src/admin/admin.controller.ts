@@ -193,6 +193,18 @@ export class AdminController {
     return this.adminService.getSampleQueryPrompts();
   }
 
+  @Get('sample-queries/export')
+  @ApiOperation({ summary: '샘플 쿼리 내보내기' })
+  async exportSampleQueries(@Query('dataSourceId') dataSourceId?: string) {
+    return this.adminService.exportSampleQueries(dataSourceId);
+  }
+
+  @Post('sample-queries/import')
+  @ApiOperation({ summary: '샘플 쿼리 가져오기' })
+  async importSampleQueries(@Body() body: any[]) {
+    return this.adminService.importSampleQueries(body);
+  }
+
   // 프롬프트 템플릿
   @Get('prompt-templates')
   @ApiOperation({ summary: '프롬프트 템플릿 목록' })

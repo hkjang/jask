@@ -35,7 +35,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { api } from '@/lib/api';
 import { useToast } from '@/components/ui/use-toast';
-import { FileText, Plus, Edit2, Trash2, Search, Loader2, Sparkles, HelpCircle } from 'lucide-react';
+import { FileText, Plus, Edit2, Trash2, Search, Loader2, Sparkles, HelpCircle, Download, Upload } from 'lucide-react';
 import { useState } from 'react';
 import Editor from 'react-simple-code-editor';
 import { highlight, languages } from 'prismjs';
@@ -655,6 +655,61 @@ export default function AdminSampleQueriesPage() {
                     <GuideContent />
                 </DialogContent>
             </Dialog>
+
+            <div className="flex gap-2 ml-4 border-l pl-4">
+                <Button variant="outline" size="icon" onClick={async () => {
+                    try {
+                        const dsId = (!selectedDataSource || selectedDataSource === 'all') ? undefined : selectedDataSource;
+                        const data = await api.exportSampleQueries(dsId);
+                        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                        const url = window.URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `sample-queries-${dsId || 'all'}-${new Date().toISOString().slice(0,10)}.json`;
+                        a.click();
+                        window.URL.revokeObjectURL(url);
+                    } catch (e) {
+                         toast({ title: '내보내기 실패', variant: 'destructive' });
+                    }
+                }} title="내보내기">
+                    <Download className="h-4 w-4" />
+                </Button>
+                <div className="relative">
+                    <input 
+                        type="file" 
+                        accept=".json" 
+                        className="hidden" 
+                        id="import-file"
+                        onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            const reader = new FileReader();
+                            reader.onload = async (e) => {
+                                try {
+                                    const json = JSON.parse(e.target?.result as string);
+                                    if (!Array.isArray(json)) throw new Error('Invalid format');
+                                    if (!confirm(`${json.length}개의 쿼리를 가져오시겠습니까?`)) return;
+                                    
+                                    const res = await api.importSampleQueries(json);
+                                    toast({ 
+                                        title: '가져오기 완료', 
+                                        description: `성공: ${res.success}, 실패: ${res.failed}` 
+                                    });
+                                    queryClient.invalidateQueries({ queryKey: ['sampleQueries'] });
+                                } catch (err) {
+                                    toast({ title: '가져오기 실패', description: '파일 형식이 올바르지 않습니다.', variant: 'destructive' });
+                                }
+                            };
+                            reader.readAsText(file);
+                            // Reset input
+                            e.target.value = '';
+                        }}
+                    />
+                    <Button variant="outline" size="icon" onClick={() => document.getElementById('import-file')?.click()} title="가져오기">
+                        <Upload className="h-4 w-4" />
+                    </Button>
+                </div>
+            </div>
 
             <Dialog open={isDialogOpen} onOpenChange={(open) => {
               setIsDialogOpen(open);
