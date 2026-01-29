@@ -412,6 +412,8 @@ function QueryPageContent() {
         content: '안녕하세요! 🎉 자연어로 데이터를 조회해보세요. 질문을 입력하면 SQL로 변환해드립니다.',
         timestamp: new Date(),
       }]);
+      // Focus on New Chat (from Sidebar or navigation)
+      setTimeout(() => inputRef.current?.focus(), 100);
     }
   }, [activeThreadId]);
 
@@ -929,6 +931,7 @@ function QueryPageContent() {
                     timestamp: new Date(),
                   }]);
                   toast({ title: '대화가 초기화되었습니다' });
+                  setTimeout(() => inputRef.current?.focus(), 100);
                 }}
                 title="대화 초기화"
               >
