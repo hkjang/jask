@@ -430,6 +430,10 @@ class ApiClient {
     return this.request(`/admin/sample-queries/${id}`, { method: 'PUT', body: data });
   }
 
+  async bulkUpdateSampleQueries(ids: string[], action: 'DELETE' | 'ACTIVATE' | 'DEACTIVATE') {
+    return this.request('/admin/sample-queries/bulk', { method: 'POST', body: { ids, action } });
+  }
+
   // Prompt Templates
   async getPromptTemplates() {
     return this.request<any[]>('/admin/prompt-templates');

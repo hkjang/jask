@@ -306,6 +306,8 @@ model SampleQuery {
   description  String?  @db.Text
   tags         String[] @default([])
   isVerified   Boolean  @default(false)
+  isActive     Boolean  @default(true)
+  analysis     Json?    // Stores extracted tables and columns: { tables: [], columns: [] }
   embedding    Unsupported("vector")?
 
   createdAt    DateTime @default(now())

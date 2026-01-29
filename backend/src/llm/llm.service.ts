@@ -315,6 +315,38 @@ Rules:
     }
   }
 
+  async analyzeSqlMetadata(sql: string, schemaContext?: string): Promise<{ tables: string[]; columns: string[] }> {
+    const systemPrompt = `You are an expert SQL Parser. Your goal is to extract all referenced "Table Names" and "Column Names" from the given SQL query.
+
+Rules:
+1. **Output Format**: JSON object with "tables" and "columns" arrays.
+   Example: { "tables": ["users", "orders"], "columns": ["id", "email", "created_at"] }
+2. **normalization**: precise names as they appear in the query (case-insensitive if SQL is standard, but respect quotes).
+3. **No extra text**: Return ONLY the JSON.`;
+
+    const response = await this.generate({
+      prompt: `Analyze this SQL and extract table/column names:\n\n${sql}`,
+      systemPrompt,
+      temperature: 0.1,
+      maxTokens: 1000,
+    });
+
+    try {
+      const content = response.content;
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      const jsonStr = jsonMatch ? jsonMatch[0] : content;
+      
+      const parsed = JSON.parse(jsonStr);
+      return {
+        tables: Array.isArray(parsed.tables) ? parsed.tables : [],
+        columns: Array.isArray(parsed.columns) ? parsed.columns : [],
+      };
+    } catch (e) {
+      this.logger.warn(`Failed to analyze SQL metadata: ${e.message}`);
+      return { tables: [], columns: [] };
+    }
+  }
+
   async generateChat(messages: { role: string; content: string }[], providerId?: string): Promise<LLMStreamChunk[]> {
     // 1. Construct prompt from messages
     let prompt = '';

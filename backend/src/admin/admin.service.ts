@@ -376,8 +376,16 @@ export class AdminService {
     category?: string;
     tags?: string[];
   }) {
+    // 0. Analyze SQL (Async but await for simplicity in Admin context)
+    const analysis = await this.llmService.analyzeSqlMetadata(data.sqlQuery);
+
     // 1. Create Basic Record
-    const sample = await this.prisma.sampleQuery.create({ data });
+    const sample = await this.prisma.sampleQuery.create({ 
+        data: {
+            ...data,
+            analysis
+        } 
+    });
 
     // 2. Sync with EmbeddableItem
     try {
@@ -424,6 +432,12 @@ export class AdminService {
     // Explicitly handle dataSourceId if present
     if (dataSourceId) {
         updateData.dataSource = { connect: { id: dataSourceId } };
+    }
+
+    // specific check for SQL change to re-analyze
+    if (data.sqlQuery) {
+        const analysis = await this.llmService.analyzeSqlMetadata(data.sqlQuery);
+        updateData.analysis = analysis;
     }
 
     const sample = await this.prisma.sampleQuery.update({
@@ -492,6 +506,41 @@ export class AdminService {
     } catch (e) {}
 
     return this.prisma.sampleQuery.delete({ where: { id } });
+  }
+
+  async bulkUpdateSampleQueries(ids: string[], action: 'DELETE' | 'ACTIVATE' | 'DEACTIVATE') {
+    if (action === 'DELETE') {
+        // Embeddable Items cleanup would be needed effectively
+        try {
+            await this.prisma.embeddableItem.deleteMany({
+                where: { 
+                    sourceId: { in: ids },
+                    type: EmbeddableType.SAMPLE_QUERY 
+                }
+            });
+        } catch(e) {}
+
+        return this.prisma.sampleQuery.deleteMany({
+            where: { id: { in: ids } }
+        });
+    } else {
+        const isActive = action === 'ACTIVATE';
+        // Sync to EmbeddableItem as well
+         try {
+            await this.prisma.embeddableItem.updateMany({
+                where: { 
+                    sourceId: { in: ids },
+                    type: EmbeddableType.SAMPLE_QUERY 
+                },
+                data: { isActive }
+            });
+        } catch(e) {}
+
+        return this.prisma.sampleQuery.updateMany({
+            where: { id: { in: ids } },
+            data: { isActive }
+        });
+    }
   }
 
   async generateAISampleQueries(dataSourceId: string, count: number = 5) {

@@ -131,6 +131,32 @@ export default function AdminSampleQueriesPage() {
     }
   };
 
+  // Bulk Actions
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  const handleBulkAction = async (action: 'DELETE' | 'ACTIVATE' | 'DEACTIVATE') => {
+      if (selectedIds.size === 0) return;
+      if (action === 'DELETE' && !confirm('선택한 항목을 삭제하시겠습니까?')) return;
+
+      try {
+          await api.bulkUpdateSampleQueries(Array.from(selectedIds), action);
+          toast({ title: '일괄 작업이 완료되었습니다' });
+          setSelectedIds(new Set());
+          queryClient.invalidateQueries({ queryKey: ['sampleQueries'] });
+      } catch (e) {
+          toast({ title: '작업 실패', variant: 'destructive' });
+      }
+  };
+
+  const toggleSelectAll = (checked: boolean) => {
+      if (checked) {
+          setSelectedIds(new Set(sampleQueries.map((q: SampleQuery) => q.id)));
+      } else {
+          setSelectedIds(new Set());
+      }
+  };
+
+
   // AI Generation State
   const [isAiDialogOpen, setIsAiDialogOpen] = useState(false);
   const [aiDataSourceId, setAiDataSourceId] = useState<string>('');
@@ -195,7 +221,17 @@ export default function AdminSampleQueriesPage() {
             <p className="text-muted-foreground">NL2SQL 학습 및 예시를 위한 샘플 쿼리를 관리합니다</p>
           </div>
           
-          <div className="flex gap-2 w-full md:w-auto">
+          <div className="flex gap-2 w-full md:w-auto items-center">
+            {selectedIds.size > 0 && (
+                <div className="flex items-center gap-2 mr-4 bg-muted/50 px-3 py-1.5 rounded-md animate-in fade-in slide-in-from-right-5">
+                    <span className="text-sm font-medium">{selectedIds.size}개 선택됨</span>
+                    <div className="h-4 w-px bg-border mx-1" />
+                    <Button variant="ghost" size="sm" onClick={() => handleBulkAction('ACTIVATE')} className="h-7 text-xs">활성화</Button>
+                    <Button variant="ghost" size="sm" onClick={() => handleBulkAction('DEACTIVATE')} className="h-7 text-xs">비활성화</Button>
+                    <Button variant="ghost" size="sm" onClick={() => handleBulkAction('DELETE')} className="h-7 text-xs text-destructive hover:text-destructive">삭제</Button>
+                </div>
+            )}
+
             <Select value={selectedDataSource} onValueChange={setSelectedDataSource}>
               <SelectTrigger className="w-[200px]">
                 <SelectValue placeholder="데이터소스 선택" />

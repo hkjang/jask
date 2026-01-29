@@ -163,6 +163,12 @@ export class AdminController {
     return this.adminService.deleteSampleQuery(id);
   }
 
+  @Post('sample-queries/bulk')
+  @ApiOperation({ summary: '샘플 쿼리 일괄 작업' })
+  bulkUpdateSampleQueries(@Body() body: { ids: string[]; action: 'DELETE' | 'ACTIVATE' | 'DEACTIVATE' }) {
+    return this.adminService.bulkUpdateSampleQueries(body.ids, body.action);
+  }
+
   @Post('sample-queries/generate')
   @ApiOperation({ summary: 'AI로 샘플 쿼리 생성 (저장 안함)' })
   generateAISampleQueries(@Body() body: { dataSourceId: string; count?: number }) {
