@@ -89,25 +89,36 @@ export class ExecutionService {
       let result: ExecutionResult;
 
       if (dataSource.type === 'postgresql') {
+        const finalSql = this.addPgLimit(sanitizedSql, maxRows);
         result = await this.executePostgreSQL(
           client as PgClient,
-          sanitizedSql,
+          finalSql,
           maxRows,
           timeout,
           startTime,
         );
       } else if (dataSource.type === 'mysql') {
+        const finalSql = this.addMySqlLimit(sanitizedSql, maxRows);
         result = await this.executeMySQL(
           client as mysql.Connection,
-          sanitizedSql,
+          finalSql,
           maxRows,
           timeout,
           startTime,
         );
       } else if (dataSource.type === 'oracle') {
+        // Oracle: Semicolon removal for SELECTs + ROWNUM limit
+        let finalSql = sanitizedSql;
+        
+        // Remove trailing semicolon
+        finalSql = finalSql.replace(/;+$/, '').trim();
+
+        // Add limit
+        finalSql = this.addOracleLimit(finalSql, maxRows);
+
         result = await this.executeOracle(
           client as oracledb.Connection,
-          sanitizedSql,
+          finalSql,
           maxRows,
           timeout,
           startTime,
@@ -636,34 +647,53 @@ export class ExecutionService {
       };
       
       if (oracleErrors[errorNum]) {
-        return `ORA-${errorNum}: ${oracleErrors[errorNum]}`;
+        return `ORA-${errorNum}: ${oracleErrors[errorNum]} (ORA-${('00000' + errorNum).slice(-5)}: ${error.message})`;
       }
-      return `ORA-${errorNum}: ${message}`;
+      return `ORA-${errorNum}: ${message} (ORA-${('00000' + errorNum).slice(-5)})`;
     }
 
     // PostgreSQL/MySQL 에러 메시지
     if (message.includes('relation') && message.includes('does not exist')) {
       const tableMatch = message.match(/relation "([^"]+)"/);
-      return `테이블을 찾을 수 없습니다${tableMatch ? `: ${tableMatch[1]}` : ''}`;
+      return `테이블을 찾을 수 없습니다${tableMatch ? `: ${tableMatch[1]}` : ''} (${message})`;
     }
 
     if (message.includes('column') && message.includes('does not exist')) {
       const colMatch = message.match(/column "([^"]+)"/);
-      return `컬럼을 찾을 수 없습니다${colMatch ? `: ${colMatch[1]}` : ''}`;
+      return `컬럼을 찾을 수 없습니다${colMatch ? `: ${colMatch[1]}` : ''} (${message})`;
     }
 
     if (message.includes('syntax error')) {
       return `SQL 문법 오류: ${message}`;
     }
 
-    if (message.includes('permission denied')) {
-      return '해당 테이블에 대한 접근 권한이 없습니다.';
-    }
-
-    if (message.includes('timeout') || message.includes('canceling statement')) {
-      return '쿼리 실행 시간이 초과되었습니다. 쿼리를 최적화해주세요.';
-    }
-
     return message;
+  }
+
+  // --- Helper Methods for Limit ---
+
+  private addPgLimit(sql: string, limit: number): string {
+    const upperSql = sql.toUpperCase();
+    if (upperSql.includes('LIMIT') || !upperSql.startsWith('SELECT')) return sql;
+    return `${sql} LIMIT ${limit}`;
+  }
+
+  private addMySqlLimit(sql: string, limit: number): string {
+    const upperSql = sql.toUpperCase();
+    if (upperSql.includes('LIMIT') || !upperSql.startsWith('SELECT')) return sql;
+    return `${sql} LIMIT ${limit}`;
+  }
+
+  private addOracleLimit(sql: string, limit: number): string {
+    const upperSql = sql.toUpperCase().trim();
+    if (!upperSql.startsWith('SELECT') && !upperSql.startsWith('WITH')) return sql;
+
+    // Check existing limits
+    if (upperSql.includes('ROWNUM') || upperSql.includes('FETCH FIRST')) return sql;
+    
+    // If simple query (no ORDER BY), safe to append WHERE ROWNUM <= N
+    // But wrapping is safer for preserving logic (though performance might vary)
+    // Using wrapping for correctness with ORDER BY and complex structures
+    return `SELECT * FROM (${sql}) WHERE ROWNUM <= ${limit}`;
   }
 }

@@ -119,11 +119,11 @@ export class ValidationService {
         warnings.push(`LIMIT 절이 없습니다. 최대 ${this.maxRows}개로 제한됩니다.`);
       }
 
-      // LIMIT 강제 추가 (SELECT만)
-      if (!normalizedSql.includes('LIMIT') && !normalizedSql.includes('ROWNUM') && 
-          !normalizedSql.includes('FETCH FIRST')) {
-        sanitizedSql = this.addLimit(sanitizedSql, this.maxRows);
-      }
+      // LIMIT 강제 추가 로직 제거 (ExecutionService로 이동)
+      // if (!normalizedSql.includes('LIMIT') && !normalizedSql.includes('ROWNUM') && 
+      //     !normalizedSql.includes('FETCH FIRST')) {
+      //   sanitizedSql = this.addLimit(sanitizedSql, this.maxRows);
+      // }
     }
 
     // 파괴적 명령 감지 (DROP, TRUNCATE, DELETE)
