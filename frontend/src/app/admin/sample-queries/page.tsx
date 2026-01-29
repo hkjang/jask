@@ -212,27 +212,39 @@ export default function AdminSampleQueriesPage() {
 
   // AI Generation State
   const [isAiDialogOpen, setIsAiDialogOpen] = useState(false);
+  const [isAiTableSelectOpen, setIsAiTableSelectOpen] = useState(false);
   const [isGuideOpen, setIsGuideOpen] = useState(false);
   const [aiDataSourceId, setAiDataSourceId] = useState<string>('');
+  const [aiTableDataSourceId, setAiTableDataSourceId] = useState<string>('');
+  const [tableList, setTableList] = useState<any[]>([]);
+  const [selectedTables, setSelectedTables] = useState<Set<string>>(new Set());
+  const [tableSearch, setTableSearch] = useState('');
+  const [isTableLoading, setIsTableLoading] = useState(false);
   const [aiCount, setAiCount] = useState<number>(5);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedQueries, setGeneratedQueries] = useState<any[]>([]);
   const [selectedGeneratedIndices, setSelectedGeneratedIndices] = useState<Set<number>>(new Set());
 
-  const handleGenerateAI = async () => {
-    if (!aiDataSourceId) {
+  const handleGenerateAI = async (dataSourceId?: string, tableNames?: string[]) => {
+    const dsId = dataSourceId || aiDataSourceId;
+    if (!dsId) {
         toast({ title: '데이터소스를 선택해주세요', variant: 'destructive' });
         return;
     }
+
     setIsGenerating(true);
     try {
-        const res = await api.generateAISampleQueries(aiDataSourceId, aiCount);
-        setGeneratedQueries(res.items);
-        setSelectedGeneratedIndices(new Set(res.items.map((_, i) => i))); // Select all by default
-    } catch (e) {
-        toast({ title: '생성 실패', description: 'AI 생성 중 오류가 발생했습니다.', variant: 'destructive' });
+      const res = await api.generateAISampleQueries(dsId, aiCount, tableNames);
+      setGeneratedQueries(res.items);
+      setSelectedGeneratedIndices(new Set(res.items.map((_, i) => i))); // Default select all 
+    } catch (e: any) {
+      toast({
+        title: '생성 실패',
+        description: e.message,
+        variant: 'destructive',
+      });
     } finally {
-        setIsGenerating(false);
+      setIsGenerating(false);
     }
   };
 
@@ -241,10 +253,17 @@ export default function AdminSampleQueriesPage() {
     if (selected.length === 0) return;
 
     let successCount = 0;
+    const targetDataSourceId = isAiTableSelectOpen ? aiTableDataSourceId : aiDataSourceId;
+
+    if (!targetDataSourceId) {
+        toast({ title: '데이터소스를 찾을 수 없습니다.', variant: 'destructive' });
+        return;
+    }
+
     try {
         const promises = selected.map(q => 
             api.createSampleQuery({
-                dataSourceId: aiDataSourceId,
+                dataSourceId: targetDataSourceId,
                 naturalQuery: q.naturalQuery,
                 sqlQuery: q.sqlQuery,
                 description: q.description,
@@ -256,6 +275,7 @@ export default function AdminSampleQueriesPage() {
         toast({ title: `${successCount}개의 쿼리가 저장되었습니다` });
         setGeneratedQueries([]);
         setIsAiDialogOpen(false);
+        setIsAiTableSelectOpen(false);
         queryClient.invalidateQueries({ queryKey: ['sampleQueries'] });
     } catch (e) {
         toast({ title: '저장 실패', variant: 'destructive' });
@@ -350,7 +370,7 @@ export default function AdminSampleQueriesPage() {
                                 />
                             </div>
                              <div className="pt-4 flex justify-end">
-                                <Button onClick={handleGenerateAI} disabled={isGenerating || !aiDataSourceId}>
+                                <Button onClick={() => handleGenerateAI()} disabled={isGenerating || !aiDataSourceId}>
                                     {isGenerating ? (
                                         <>
                                             <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -405,6 +425,220 @@ export default function AdminSampleQueriesPage() {
                                     </span>
                                     <div className="flex gap-2">
                                         <Button variant="outline" onClick={() => setIsAiDialogOpen(false)}>취소</Button>
+                                        <Button onClick={handleSaveGenerated} disabled={selectedGeneratedIndices.size === 0}>
+                                            선택 항목 저장
+                                        </Button>
+                                    </div>
+                                </div>
+                            </DialogFooter>
+                        </div>
+                    )}
+                </DialogContent>
+            </Dialog>
+
+            <Button 
+                onClick={() => {
+                    setAiTableDataSourceId('');
+                    setTableList([]);
+                    setSelectedTables(new Set());
+                    setIsAiTableSelectOpen(true);
+                }}
+                className="gap-2"
+                variant="secondary"
+            >
+                <Sparkles className="h-4 w-4" />
+                AI 생성 (테이블 선택)
+            </Button>
+
+            <Dialog open={isAiTableSelectOpen} onOpenChange={setIsAiTableSelectOpen}>
+                <DialogContent className="sm:max-w-[1500px] max-h-[90vh] overflow-y-auto">
+                    <DialogHeader>
+                        <div className="flex items-center justify-between">
+                            <DialogTitle>AI 샘플 쿼리 생성 (테이블 선택)</DialogTitle>
+                             <Button variant="ghost" size="icon" onClick={() => setIsGuideOpen(true)} className="h-6 w-6 rounded-full hover:bg-muted">
+                                <HelpCircle className="h-4 w-4 text-muted-foreground" />
+                            </Button>
+                        </div>
+                        <DialogDescription>
+                            특정 테이블을 선택하여 해당 테이블과 연관된 질의를 집중적으로 생성합니다.
+                        </DialogDescription>
+                    </DialogHeader>
+
+                     {!generatedQueries.length ? (
+                        <div className="space-y-4 py-4">
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <label className="text-sm font-medium">데이터소스</label>
+                                    <Select value={aiTableDataSourceId} onValueChange={async (val) => {
+                                        setAiTableDataSourceId(val);
+                                        setIsTableLoading(true);
+                                        try {
+                                            const tables = await api.getTables(val);
+                                            setTableList(tables || []);
+                                            setSelectedTables(new Set());
+                                        } catch(e: any) {
+                                            toast({ title: '테이블 로드 실패', description: String(e), variant: 'destructive' });
+                                        } finally {
+                                            setIsTableLoading(false);
+                                        }
+                                    }}>
+                                        <SelectTrigger>
+                                            <SelectValue placeholder="선택하세요" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {dataSources.map((ds: DataSource) => (
+                                                <SelectItem key={ds.id} value={ds.id}>{ds.name}</SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-sm font-medium">생성 개수 ({aiCount}개)</label>
+                                    <Input 
+                                        type="range" 
+                                        min="1" 
+                                        max="10" 
+                                        value={aiCount} 
+                                        onChange={(e) => setAiCount(parseInt(e.target.value))} 
+                                        className="cursor-pointer"
+                                    />
+                                </div>
+                            </div>
+                            
+                            {aiTableDataSourceId && (
+                                <div className="border rounded-md p-4 space-y-3">
+                                    <div className="flex items-center justify-between">
+                                        <h4 className="font-medium text-sm">테이블 선택 ({selectedTables.size}개)</h4>
+                                        <div className="relative w-64">
+                                            <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                                            <Input 
+                                                placeholder="테이블 검색..." 
+                                                className="pl-8 h-9" 
+                                                value={tableSearch}
+                                                onChange={(e) => setTableSearch(e.target.value)}
+                                            />
+                                        </div>
+                                    </div>
+                                    
+                                    <div className="h-[300px] overflow-y-auto border rounded bg-background p-2">
+                                        {isTableLoading ? (
+                                            <div className="flex justify-center items-center h-full">
+                                                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                                            </div>
+                                        ) : (
+                                            <div className="space-y-1">
+                                                <div className="flex items-center gap-2 px-2 py-1.5 hover:bg-muted/50 rounded cursor-pointer border-b mb-1 pb-2">
+                                                    <input 
+                                                        type="checkbox" 
+                                                        className="accent-primary h-4 w-4"
+                                                        checked={selectedTables.size === tableList.length && tableList.length > 0}
+                                                        onChange={(e) => {
+                                                            if (e.target.checked) setSelectedTables(new Set(tableList.map(t => t.tableName)));
+                                                            else setSelectedTables(new Set());
+                                                        }}
+                                                    />
+                                                    <span className="text-sm font-medium">전체 선택 / 해제</span>
+                                                </div>
+                                                {tableList
+                                                    .filter(t => t.tableName.toLowerCase().includes(tableSearch.toLowerCase()) || (t.description || '').toLowerCase().includes(tableSearch.toLowerCase()))
+                                                    .map((t) => (
+                                                    <div 
+                                                        key={t.id} 
+                                                        className="flex items-center gap-2 px-2 py-1.5 hover:bg-muted/50 rounded cursor-pointer"
+                                                        onClick={() => {
+                                                            const next = new Set(selectedTables);
+                                                            if (next.has(t.tableName)) next.delete(t.tableName);
+                                                            else next.add(t.tableName);
+                                                            setSelectedTables(next);
+                                                        }}
+                                                    >
+                                                        <input 
+                                                            type="checkbox" 
+                                                            checked={selectedTables.has(t.tableName)} 
+                                                            readOnly 
+                                                            className="accent-primary h-4 w-4 pointer-events-none" 
+                                                        />
+                                                        <div className="flex-1 overflow-hidden">
+                                                            <div className="flex justify-between">
+                                                                <span className="text-sm font-medium truncate" title={t.tableName}>{t.tableName}</span>
+                                                                <span className="text-xs text-muted-foreground ml-2">{t.columns?.length || 0} cols</span>
+                                                            </div>
+                                                            {t.description && <p className="text-xs text-muted-foreground truncate" title={t.description}>{t.description}</p>}
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                                {tableList.filter(t => t.tableName.toLowerCase().includes(tableSearch.toLowerCase())).length === 0 && (
+                                                    <div className="text-center py-8 text-sm text-muted-foreground">
+                                                        검색 결과가 없습니다.
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                             <div className="pt-4 flex justify-end gap-2">
+                                <Button variant="outline" onClick={() => setIsAiTableSelectOpen(false)}>취소</Button>
+                                <Button 
+                                    onClick={() => handleGenerateAI(aiTableDataSourceId, Array.from(selectedTables))} 
+                                    disabled={isGenerating || !aiTableDataSourceId || selectedTables.size === 0}
+                                >
+                                    {isGenerating ? (
+                                        <>
+                                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                            분석 및 생성 중...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Sparkles className="h-4 w-4 mr-2" />
+                                            생성 시작 ({selectedTables.size})
+                                        </>
+                                    )}
+                                </Button>
+                            </div>
+                        </div>
+                    ) : (
+                        // Reuse same results UI
+                        <div className="space-y-4">
+                            <div className="flex justify-between items-center mb-2">
+                                <span className="text-sm text-muted-foreground">{generatedQueries.length}개 생성됨</span>
+                                <Button variant="ghost" size="sm" onClick={() => setGeneratedQueries([])}>다시 생성</Button>
+                            </div>
+                            <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-2">
+                                {generatedQueries.map((q, i) => (
+                                    <Card key={i} className={`border cursor-pointer transition-colors ${selectedGeneratedIndices.has(i) ? 'border-primary bg-primary/5' : ''}`}
+                                        onClick={() => {
+                                            const next = new Set(selectedGeneratedIndices);
+                                            if (next.has(i)) next.delete(i);
+                                            else next.add(i);
+                                            setSelectedGeneratedIndices(next);
+                                        }}
+                                    >
+                                        <CardContent className="p-3">
+                                            <div className="flex gap-3">
+                                                <div className="mt-1">
+                                                    <input type="checkbox" checked={selectedGeneratedIndices.has(i)} readOnly className="accent-primary h-4 w-4" />
+                                                </div>
+                                                <div className="space-y-1 flex-1">
+                                                    <p className="font-medium text-sm">{q.naturalQuery}</p>
+                                                    <code className="block text-xs bg-muted p-1.5 rounded font-mono text-muted-foreground break-all">
+                                                        {q.sqlQuery}
+                                                    </code>
+                                                    {q.description && <p className="text-xs text-muted-foreground">{q.description}</p>}
+                                                </div>
+                                            </div>
+                                        </CardContent>
+                                    </Card>
+                                ))}
+                            </div>
+                            <DialogFooter>
+                                <div className="flex justify-between w-full items-center">
+                                    <span className="text-sm text-muted-foreground">
+                                        {selectedGeneratedIndices.size}개 선택됨
+                                    </span>
+                                    <div className="flex gap-2">
+                                        <Button variant="outline" onClick={() => setIsAiTableSelectOpen(false)}>닫기</Button>
                                         <Button onClick={handleSaveGenerated} disabled={selectedGeneratedIndices.size === 0}>
                                             선택 항목 저장
                                         </Button>

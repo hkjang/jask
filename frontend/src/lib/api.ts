@@ -419,10 +419,14 @@ class ApiClient {
     return this.request(`/admin/sample-queries/${id}`, { method: 'DELETE' });
   }
 
-  async generateAISampleQueries(dataSourceId: string, count: number = 5) {
+  async getTables(dataSourceId: string) {
+    return this.request<any[]>(`/metadata/tables/${dataSourceId}`);
+  }
+
+  async generateAISampleQueries(dataSourceId: string, count: number = 5, tableNames?: string[]) {
     return this.request<{ generated: number; items: any[] }>(
       '/admin/sample-queries/generate', 
-      { method: 'POST', body: { dataSourceId, count } }
+      { method: 'POST', body: { dataSourceId, count, tableNames } }
     );
   }
 

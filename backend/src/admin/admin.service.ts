@@ -568,17 +568,22 @@ export class AdminService {
     return { fixedSql: fixed };
   }
 
-  async generateAISampleQueries(dataSourceId: string, count: number = 5) {
+  async generateAISampleQueries(dataSourceId: string, count: number = 5, tableNames?: string[]) {
     // 1. Fetch Schema Context
+    const whereClause: any = { dataSourceId, isExcluded: false };
+    if (tableNames && tableNames.length > 0) {
+        whereClause.tableName = { in: tableNames };
+    }
+
     const tables = await this.prisma.tableMetadata.findMany({
-      where: { dataSourceId, isExcluded: false },
+      where: whereClause,
       include: {
         columns: {
           where: { isExcluded: false },
           select: { columnName: true, dataType: true, description: true },
         },
       },
-      take: 20, // Limit context size
+      take: tableNames?.length ? undefined : 20, // If specific tables selected, take all of them. Else limit context.
     });
 
     if (tables.length === 0) {

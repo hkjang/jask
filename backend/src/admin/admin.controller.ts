@@ -183,8 +183,8 @@ export class AdminController {
 
   @Post('sample-queries/generate')
   @ApiOperation({ summary: 'AI로 샘플 쿼리 생성 (저장 안함)' })
-  generateAISampleQueries(@Body() body: { dataSourceId: string; count?: number }) {
-    return this.adminService.generateAISampleQueries(body.dataSourceId, body.count);
+  generateAISampleQueries(@Body() body: { dataSourceId: string; count?: number; tableNames?: string[] }) {
+    return this.adminService.generateAISampleQueries(body.dataSourceId, body.count, body.tableNames);
   }
 
   @Get('sample-queries/prompts')
