@@ -169,6 +169,18 @@ export class AdminController {
     return this.adminService.bulkUpdateSampleQueries(body.ids, body.action);
   }
 
+  @Post('sample-queries/test')
+  @ApiOperation({ summary: '샘플 쿼리 테스트 (실행)' })
+  testSampleQuery(@Body() body: { dataSourceId: string; sql: string }) {
+    return this.adminService.testSampleQuery(body.dataSourceId, body.sql);
+  }
+
+  @Post('sample-queries/fix')
+  @ApiOperation({ summary: '샘플 쿼리 자동 수정 (AI)' })
+  fixSampleQuery(@Body() body: { dataSourceId: string; sql: string; error: string }) {
+    return this.adminService.fixSampleQuery(body.dataSourceId, body.sql, body.error);
+  }
+
   @Post('sample-queries/generate')
   @ApiOperation({ summary: 'AI로 샘플 쿼리 생성 (저장 안함)' })
   generateAISampleQueries(@Body() body: { dataSourceId: string; count?: number }) {

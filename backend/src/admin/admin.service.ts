@@ -6,6 +6,8 @@ import * as bcrypt from 'bcrypt';
 
 import { EmbeddingService } from '../embedding/embedding.service';
 import { EmbeddableType } from '../embedding/dto/embedding.dto';
+import { ExecutionService } from '../execution/execution.service';
+import { MetadataService } from '../metadata/metadata.service';
 
 @Injectable()
 export class AdminService {
@@ -16,6 +18,8 @@ export class AdminService {
     private llmService: LLMService,
     private auditService: AuditService,
     private embeddingService: EmbeddingService,
+    private executionService: ExecutionService,
+    private metadataService: MetadataService,
   ) {}
 
   // LLM 프로바이더 관리
@@ -541,6 +545,27 @@ export class AdminService {
             data: { isActive }
         });
     }
+  }
+
+  async testSampleQuery(dataSourceId: string, sql: string) {
+    // Preview mode execution (limited rows, safe mode)
+    return this.executionService.execute(dataSourceId, sql, { 
+      mode: 'preview',
+      maxRows: 10,
+    });
+  }
+
+  async fixSampleQuery(dataSourceId: string, sql: string, error: string) {
+    // Get Schema Context
+    const schemaSearch = await this.metadataService.searchSchemaContext(dataSourceId, sql, 10);
+    let schemaContext = schemaSearch.context;
+      
+    // Determine DB Type
+    const dataSource = await this.prisma.dataSource.findUnique({ where: { id: dataSourceId } });
+    const dbType = dataSource?.type || 'postgresql';
+
+    const fixed = await this.llmService.fixSQL(sql, error, schemaContext, dbType);
+    return { fixedSql: fixed };
   }
 
   async generateAISampleQueries(dataSourceId: string, count: number = 5) {

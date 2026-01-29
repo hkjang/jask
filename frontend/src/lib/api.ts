@@ -434,6 +434,14 @@ class ApiClient {
     return this.request('/admin/sample-queries/bulk', { method: 'POST', body: { ids, action } });
   }
 
+  async testSampleQuery(dataSourceId: string, sql: string) {
+    return this.request('/admin/sample-queries/test', { method: 'POST', body: { dataSourceId, sql } });
+  }
+
+  async fixSampleQuery(dataSourceId: string, sql: string, error: string) {
+    return this.request<{ fixedSql: string }>('/admin/sample-queries/fix', { method: 'POST', body: { dataSourceId, sql, error } });
+  }
+
   // Prompt Templates
   async getPromptTemplates() {
     return this.request<any[]>('/admin/prompt-templates');

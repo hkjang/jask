@@ -7,9 +7,11 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { AuditModule } from '../audit/audit.module';
 
 import { EmbeddingModule } from '../embedding/embedding.module';
+import { ExecutionModule } from '../execution/execution.module';
+import { MetadataModule } from '../metadata/metadata.module';
 
 @Module({
-  imports: [PrismaModule, LLMModule, AuditModule, EmbeddingModule, AuthModule],
+  imports: [PrismaModule, LLMModule, AuditModule, EmbeddingModule, AuthModule, ExecutionModule, MetadataModule],
   providers: [AdminService],
   controllers: [AdminController],
   exports: [AdminService],

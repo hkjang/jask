@@ -120,6 +120,8 @@ export default function AdminSampleQueriesPage() {
       dataSourceId: query.dataSourceId,
       category: query.category || '',
     });
+    setExecutionResult(null);
+    setExecutionError(null);
     setIsDialogOpen(true);
   };
 
@@ -160,6 +162,49 @@ export default function AdminSampleQueriesPage() {
       }
   };
 
+
+
+  // Execution & Fix State
+  const [executionResult, setExecutionResult] = useState<any>(null);
+  const [executionError, setExecutionError] = useState<string | null>(null);
+  const [isExecuting, setIsExecuting] = useState(false);
+  const [isFixing, setIsFixing] = useState(false);
+
+  const handleTestQuery = async () => {
+    if (!formData.dataSourceId || !formData.sqlQuery) {
+        toast({ title: '데이터소스와 SQL을 입력해주세요', variant: 'destructive' });
+        return;
+    }
+    setIsExecuting(true);
+    setExecutionError(null);
+    setExecutionResult(null);
+    try {
+        const res: any = await api.testSampleQuery(formData.dataSourceId, formData.sqlQuery);
+        setExecutionResult(res);
+        toast({ title: '실행 성공', description: `${res.rowCount}개의 행이 반환되었습니다.` });
+    } catch (e: any) {
+        setExecutionError(e.message);
+        toast({ title: '실행 실패', description: e.message, variant: 'destructive' });
+    } finally {
+        setIsExecuting(false);
+    }
+  };
+
+  const handleFixQuery = async () => {
+    if (!formData.dataSourceId || !formData.sqlQuery || !executionError) return;
+    setIsFixing(true);
+    try {
+        const res = await api.fixSampleQuery(formData.dataSourceId, formData.sqlQuery, executionError);
+        setFormData({ ...formData, sqlQuery: res.fixedSql });
+        setExecutionError(null);
+        setExecutionResult(null);
+        toast({ title: '수정 완료', description: 'SQL이 수정되었습니다. 다시 실행해보세요.' });
+    } catch (e: any) {
+        toast({ title: '수정 실패', description: e.message, variant: 'destructive' });
+    } finally {
+        setIsFixing(false);
+    }
+  };
 
   // AI Generation State
   const [isAiDialogOpen, setIsAiDialogOpen] = useState(false);
@@ -417,14 +462,55 @@ export default function AdminSampleQueriesPage() {
                   </div>
                   
                   <div className="space-y-2">
-                    <label className="text-sm font-medium">SQL 쿼리</label>
+                    <div className="flex justify-between items-center">
+                        <label className="text-sm font-medium">SQL 쿼리</label>
+                        <div className="flex gap-2">
+                            {executionError && (
+                                <Button 
+                                    size="sm" 
+                                    variant="outline" 
+                                    onClick={handleFixQuery} 
+                                    disabled={isFixing}
+                                    className="h-7 text-xs border-orange-500 text-orange-600 hover:bg-orange-50 hover:text-orange-700"
+                                >
+                                    {isFixing ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Sparkles className="h-3 w-3 mr-1" />}
+                                    AI로 수정
+                                </Button>
+                            )}
+                            <Button 
+                                size="sm" 
+                                variant="secondary" 
+                                onClick={handleTestQuery} 
+                                disabled={isExecuting || !formData.sqlQuery}
+                                className="h-7 text-xs"
+                            >
+                                {isExecuting ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : 'Run'}
+                            </Button>
+                        </div>
+                    </div>
                     <Textarea
                       value={formData.sqlQuery}
                       onChange={(e) => setFormData({ ...formData, sqlQuery: e.target.value })}
                       placeholder="SELECT count(*) FROM users WHERE ..."
                       rows={5}
-                      className="font-mono text-sm"
+                      className={`font-mono text-sm ${executionError ? 'border-red-500 focus-visible:ring-red-500' : ''}`}
                     />
+                    {executionResult && (
+                        <div className="bg-muted p-2 rounded-md text-xs font-mono overflow-auto max-h-32 border border-green-200 bg-green-50/50 dark:border-green-800 dark:bg-green-900/20">
+                            <div className="font-semibold text-green-700 dark:text-green-400 mb-1">
+                                ✓ 실행 성공 ({executionResult.rowCount} rows, {executionResult.executionTime}ms)
+                            </div>
+                            {/* Simple preview of first row if exists */}
+                            {executionResult.rows && executionResult.rows.length > 0 && (
+                                <pre>{JSON.stringify(executionResult.rows[0], null, 2)}</pre>
+                            )}
+                        </div>
+                    )}
+                    {executionError && (
+                        <div className="bg-red-50 dark:bg-red-900/20 p-2 rounded-md text-xs text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800">
+                            ⚠ {executionError}
+                        </div>
+                    )}
                   </div>
 
                   {editingQuery && editingQuery.analysis && (
