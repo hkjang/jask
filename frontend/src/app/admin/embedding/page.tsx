@@ -10,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { Slider } from '@/components/ui/slider';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
   DialogContent,
@@ -55,6 +56,10 @@ import {
   Play,
   RefreshCw,
   Eye,
+  CheckSquare,
+  Square,
+  MoreHorizontal,
+  X,
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -104,7 +109,9 @@ export default function EmbeddingManagementPage() {
   const [isConfigDialogOpen, setIsConfigDialogOpen] = useState(false);
   const [isSampleDialogOpen, setIsSampleDialogOpen] = useState(false); // For Sample Query
   const [selectedItem, setSelectedItem] = useState<any>(null);
-  const [selectedType, setSelectedType] = useState<string>('TABLE'); // 'TABLE' | 'SAMPLE_QUERY'
+  const [selectedType, setSelectedType] = useState<string>('TABLE');
+  const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());
+  const [isBulkProcessing, setIsBulkProcessing] = useState(false);
   const [editingConfig, setEditingConfig] = useState<EmbeddingConfig | null>(null);
   const [configForm, setConfigForm] = useState({
     name: '',
@@ -262,6 +269,64 @@ export default function EmbeddingManagementPage() {
   const handleSearch = () => {
     if (!searchQuery.trim()) return;
     searchMutation.mutate({ query: searchQuery, searchMethod });
+  };
+
+  // Bulk Actions
+  const toggleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedItemIds(new Set(items.map(item => item.id)));
+    } else {
+      setSelectedItemIds(new Set());
+    }
+  };
+
+  const toggleSelectItem = (id: string, checked: boolean) => {
+    const newSelected = new Set(selectedItemIds);
+    if (checked) {
+      newSelected.add(id);
+    } else {
+      newSelected.delete(id);
+    }
+    setSelectedItemIds(newSelected);
+  };
+
+  const handleBulkAction = async (action: 'INCLUDE' | 'EXCLUDE' | 'EMBED') => {
+    if (selectedItemIds.size === 0) return;
+    
+    setIsBulkProcessing(true);
+    const ids = Array.from(selectedItemIds);
+    let successCount = 0;
+    let failCount = 0;
+
+    try {
+      if (action === 'EMBED') {
+        const promises = ids.map(id => 
+          api.generateItemEmbedding(id)
+            .then(() => { successCount++; })
+            .catch(() => { failCount++; })
+        );
+        await Promise.all(promises);
+      } else {
+        const isActive = action === 'INCLUDE';
+        const promises = ids.map(id => 
+          api.updateEmbeddableItem(id, { isActive })
+            .then(() => { successCount++; })
+            .catch(() => { failCount++; })
+        );
+        await Promise.all(promises);
+      }
+
+      queryClient.invalidateQueries({ queryKey: ['embeddableItems'] });
+      setSelectedItemIds(new Set());
+      toast({
+        title: '일괄 작업 완료',
+        description: `성공: ${successCount}건, 실패: ${failCount}건`,
+      });
+    } catch (error) {
+      toast({ title: '일괄 작업 중 오류 발생', variant: 'destructive' });
+    } finally {
+      setIsBulkProcessing(false);
+    }
   };
 
   const getSearchMethodBadge = (method: string) => {
@@ -707,15 +772,75 @@ export default function EmbeddingManagementPage() {
                 </CardContent>
               </Card>
             ) : (
+              <div className="space-y-4">
+                 {/* Bulk Action Bar */}
+                 {selectedItemIds.size > 0 && (
+                  <div className="sticky top-0 z-10 bg-background border rounded-lg p-2 mb-4 flex items-center justify-between shadow-sm animate-in slide-in-from-top-2">
+                    <div className="flex items-center gap-4 px-2">
+                      <span className="font-medium text-sm">
+                        {selectedItemIds.size}개 선택됨
+                      </span>
+                      <Button variant="ghost" size="sm" onClick={() => setSelectedItemIds(new Set())}>
+                        <X className="h-4 w-4 mr-1" /> 선택 취소
+                      </Button>
+                    </div>
+                    <div className="flex items-center gap-2">
+                       <Button 
+                         variant="outline" 
+                         size="sm"
+                         disabled={isBulkProcessing}
+                         onClick={() => handleBulkAction('INCLUDE')}
+                       >
+                         <CheckSquare className="h-4 w-4 mr-2" /> 선택 포함
+                       </Button>
+                       <Button 
+                         variant="outline" 
+                         size="sm"
+                         disabled={isBulkProcessing}
+                         onClick={() => handleBulkAction('EXCLUDE')}
+                       >
+                         <Square className="h-4 w-4 mr-2" /> 선택 제외
+                       </Button>
+                       <Button 
+                         size="sm"
+                         disabled={isBulkProcessing}
+                         onClick={() => handleBulkAction('EMBED')}
+                       >
+                         {isBulkProcessing ? (
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                         ) : (
+                            <Play className="h-4 w-4 mr-2" />
+                         )}
+                         선택 임베딩
+                       </Button>
+                    </div>
+                  </div>
+                )}
+                
+               <div className="flex items-center gap-2 mb-2 px-1">
+                 <Checkbox 
+                    checked={items.length > 0 && selectedItemIds.size === items.length}
+                    onCheckedChange={(checked) => toggleSelectAll(checked as boolean)}
+                 />
+                 <span className="text-sm text-muted-foreground">전체 선택</span>
+               </div>
+
               <div className="grid gap-2">
                 {items.map((item: EmbeddableItem) => (
                   <Card 
                     key={item.id} 
-                    className="py-2 cursor-pointer hover:bg-muted/50 transition-colors"
-                    onClick={() => setSelectedItem(item)}
+                    className={`py-2 cursor-pointer transition-colors ${selectedItemIds.has(item.id) ? 'bg-muted/50 border-primary' : 'hover:bg-muted/50'}`}
+                    onClick={() => toggleSelectItem(item.id, !selectedItemIds.has(item.id))}
                   >
                     <CardContent className="flex items-center justify-between py-2">
-                      <div className="flex items-center gap-3 flex-1 min-w-0">
+                      <div className="flex items-center gap-3 mr-3" onClick={(e) => e.stopPropagation()}>
+                        <Checkbox 
+                          checked={selectedItemIds.has(item.id)}
+                          onCheckedChange={(checked) => toggleSelectItem(item.id, checked as boolean)}
+                        />
+                      </div>
+                      <div className="flex items-center gap-3 flex-1 min-w-0" onClick={() => setSelectedItem(item)}>
+
                         {getTypeBadge(item.type)}
                         <p className="text-sm truncate flex-1">{item.content.slice(0, 100)}...</p>
                         <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -782,6 +907,7 @@ export default function EmbeddingManagementPage() {
                     </CardContent>
                   </Card>
                 ))}
+              </div>
               </div>
             )}
           </TabsContent>
