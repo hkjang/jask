@@ -186,16 +186,17 @@ class ApiClient {
     return this.request(`/metadata/sync/${dataSourceId}`, { method: 'POST' });
   }
 
-  async translateMetadata(dataSourceId: string) {
+  async translateMetadata(dataSourceId: string, untranslatedOnly: boolean = false) {
     // Determine backend URL (assuming localhost:4000 for dev environments)
-    // Ideally this should come from env or config. 
+    // Ideally this should come from env or config.
     // Since we are fixing a dev-mode proxy timeout, we use the direct backend URL.
     const baseUrl = '/api';
     const token = this.getToken();
     const headers: any = { 'Content-Type': 'application/json' };
     if (token) headers['Authorization'] = `Bearer ${token}`;
 
-    const response = await fetch(`${baseUrl}/metadata/translate/${dataSourceId}`, { 
+    const queryParam = untranslatedOnly ? '?untranslatedOnly=true' : '';
+    const response = await fetch(`${baseUrl}/metadata/translate/${dataSourceId}${queryParam}`, {
       method: 'POST',
       headers
     });
@@ -205,6 +206,24 @@ class ApiClient {
         throw new Error(error.message || `Translation Failed: ${response.status}`);
     }
     return response.json();
+  }
+
+  // 단일 테이블 번역
+  async translateTable(tableId: string) {
+    return this.request(`/metadata/tables/${tableId}/translate`, { method: 'POST' });
+  }
+
+  // 테이블 AI 동기화 (임베딩 재생성)
+  async syncTableWithAI(tableId: string) {
+    return this.request(`/metadata/tables/${tableId}/sync-ai`, { method: 'POST' });
+  }
+
+  // 테이블 AI 컨텍스트 제외/포함 설정
+  async setTableExcluded(tableId: string, isExcluded: boolean) {
+    return this.request(`/metadata/tables/${tableId}/exclude`, {
+      method: 'PATCH',
+      body: { isExcluded }
+    });
   }
 
   // NL2SQL

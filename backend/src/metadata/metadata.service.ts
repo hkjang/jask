@@ -1231,15 +1231,16 @@ export class MetadataService {
     });
   }
 
-  async translateMetadata(dataSourceId: string) {
+  async translateMetadata(dataSourceId: string, untranslatedOnly: boolean = false) {
     const tables = await this.prisma.tableMetadata.findMany({
       where: { dataSourceId, isExcluded: false },
-      include: { 
-        columns: true 
+      include: {
+        columns: true
       }
     });
 
     let processedRequestCount = 0;
+    let skippedCount = 0;
     const totalTables = tables.length;
 
     for (const table of tables) {
@@ -1247,6 +1248,23 @@ export class MetadataService {
       if (!table.columns || table.columns.length === 0) {
         this.logger.warn(`Skipping table ${table.tableName}: no columns found`);
         continue;
+      }
+
+      // untranslatedOnly 모드: 이미 번역이 완료된 테이블은 스킵
+      if (untranslatedOnly) {
+        const hasTableDescription = !!table.description && table.description.trim().length > 0;
+        const translatedColumns = table.columns.filter(col =>
+          (col.semanticName && col.semanticName.trim().length > 0) ||
+          (col.description && col.description.trim().length > 0)
+        );
+        const allColumnsTranslated = table.columns.length > 0 && translatedColumns.length === table.columns.length;
+
+        // 테이블 설명과 모든 컬럼이 이미 번역되어 있으면 스킵
+        if (hasTableDescription && allColumnsTranslated) {
+          this.logger.log(`Skipping already translated table: ${table.tableName}`);
+          skippedCount++;
+          continue;
+        }
       }
 
       // Build detailed column info including data types
@@ -1435,7 +1453,210 @@ Include ALL ${table.columns.length} columns in your response.`;
       }
     }
 
-    return { success: true, processed: processedRequestCount, total: totalTables };
+    return { success: true, processed: processedRequestCount, skipped: skippedCount, total: totalTables };
+  }
+
+  // ===========================================
+  // 단일 테이블 번역
+  // ===========================================
+  async translateSingleTable(tableId: string) {
+    const table = await this.prisma.tableMetadata.findUnique({
+      where: { id: tableId },
+      include: { columns: true }
+    });
+
+    if (!table) {
+      throw new Error('테이블을 찾을 수 없습니다.');
+    }
+
+    if (!table.columns || table.columns.length === 0) {
+      throw new Error('테이블에 컬럼이 없습니다.');
+    }
+
+    // Build detailed column info
+    const columnDetails = table.columns.map(c => {
+      let info = `${c.columnName} (${c.dataType}`;
+      if (c.isNullable === false) info += ', NOT NULL';
+      if (c.isPrimaryKey) info += ', PK';
+      if (c.isForeignKey) info += `, FK -> ${c.referencedTable}.${c.referencedColumn}`;
+      if (c.description) info += `, desc: ${c.description}`;
+      info += ')';
+      return info;
+    }).join('\n  - ');
+
+    const prompt = `You are a database metadata expert. Analyze the following table schema and provide Korean semantic names (business terms) and descriptions.
+
+Table Name: ${table.tableName}
+Schema: ${table.schemaName}
+Columns:
+  - ${columnDetails}
+
+Your task:
+1. Provide a Korean description for the table explaining what it stores
+2. For each column, provide:
+   - semanticName: A Korean business term (e.g., "사용자 ID", "생성일시", "주문번호")
+   - description: A brief Korean description of what the column contains
+
+IMPORTANT: You MUST respond with ONLY a valid JSON object in this exact format, no other text:
+{
+  "tableDescription": "테이블 설명",
+  "columns": [
+    {
+      "columnName": "${table.columns[0]?.columnName || 'column_name'}",
+      "semanticName": "한글 의미명",
+      "description": "한글 설명"
+    }
+  ]
+}
+
+Include ALL ${table.columns.length} columns in your response.`;
+
+    try {
+      const response = await this.llmService.generate({
+        prompt,
+        systemPrompt: 'You are a helpful data assistant. Output valid JSON only.',
+        temperature: 0.1,
+        maxTokens: 2000
+      });
+
+      let content = response.content;
+      content = content.replace(/<think>[\s\S]*?<\/think>/gi, '');
+      content = content.replace(/```json\s*/gi, '');
+      content = content.replace(/```\s*/gi, '');
+      content = content.trim();
+
+      let result: any = null;
+      try {
+        result = JSON.parse(content);
+      } catch {
+        const start = content.indexOf('{');
+        const end = content.lastIndexOf('}');
+        if (start !== -1 && end !== -1 && start < end) {
+          let jsonStr = content.substring(start, end + 1);
+          jsonStr = jsonStr.replace(/"([^"\\]*(\\.[^"\\]*)*)"/g, (match) => {
+            return match.replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t');
+          });
+          try {
+            result = JSON.parse(jsonStr);
+          } catch {
+            jsonStr = jsonStr.replace(/,\s*}/g, '}').replace(/,\s*]/g, ']').replace(/'/g, '"');
+            result = JSON.parse(jsonStr);
+          }
+        }
+      }
+
+      // Update Table
+      if (result.tableDescription) {
+        await this.prisma.tableMetadata.update({
+          where: { id: table.id },
+          data: { description: result.tableDescription }
+        });
+      }
+
+      // Update Columns
+      if (result.columns && Array.isArray(result.columns)) {
+        for (const colResult of result.columns) {
+          const column = table.columns.find(c => c.columnName === colResult.columnName);
+          if (column) {
+            await this.prisma.columnMetadata.update({
+              where: { id: column.id },
+              data: {
+                semanticName: colResult.semanticName,
+                description: colResult.description
+              }
+            });
+          }
+        }
+      }
+
+      // Generate Embedding
+      await this.generateTableEmbedding(table, result);
+
+      this.logger.log(`Translated single table ${table.tableName}`);
+      return { success: true, tableName: table.tableName };
+    } catch (error) {
+      this.logger.error(`Failed to translate table ${table.tableName}: ${error.message}`);
+      throw new Error(`번역 실패: ${error.message}`);
+    }
+  }
+
+  // ===========================================
+  // 단일 테이블 AI 동기화 (임베딩 재생성)
+  // ===========================================
+  async syncSingleTableWithAI(tableId: string) {
+    const table = await this.prisma.tableMetadata.findUnique({
+      where: { id: tableId },
+      include: { columns: true }
+    });
+
+    if (!table) {
+      throw new Error('테이블을 찾을 수 없습니다.');
+    }
+
+    // 기존 메타데이터로 임베딩 재생성
+    const result = {
+      tableDescription: table.description,
+      columns: table.columns.map(c => ({
+        columnName: c.columnName,
+        semanticName: c.semanticName,
+        description: c.description
+      }))
+    };
+
+    await this.generateTableEmbedding(table, result);
+
+    // Update sync status
+    await this.prisma.tableMetadata.update({
+      where: { id: table.id },
+      data: {
+        isSyncedWithAI: true,
+        lastAiUpdate: new Date()
+      }
+    });
+
+    this.logger.log(`Synced table ${table.tableName} with AI`);
+    return { success: true, tableName: table.tableName };
+  }
+
+  // 테이블 임베딩 생성 헬퍼 메서드
+  private async generateTableEmbedding(table: any, result: any) {
+    try {
+      const objectType = table.tableType === 'VIEW' ? 'View' :
+                         table.tableType === 'MATERIALIZED_VIEW' ? 'Materialized View' : 'Table';
+      let embeddingText = `${objectType}: ${table.tableName}`;
+
+      if (result.tableDescription) embeddingText += `\nDescription: ${result.tableDescription}`;
+
+      if (table.tableType === 'VIEW' && table.viewDefinition) {
+        const truncatedDef = table.viewDefinition.length > 1000
+          ? table.viewDefinition.substring(0, 1000) + '...'
+          : table.viewDefinition;
+        embeddingText += `\nView SQL: ${truncatedDef}`;
+      }
+
+      const colInfo = (result.columns || []).map((c: any) => {
+        return `- ${c.columnName} (${c.semanticName || ''}): ${c.description || ''}`;
+      }).join('\n');
+
+      if (colInfo) embeddingText += `\nColumns:\n${colInfo}`;
+
+      const embedding = await this.llmService.generateEmbedding(embeddingText);
+      const vectorString = `[${embedding.join(',')}]`;
+
+      await this.prisma.$executeRaw`
+        INSERT INTO "SchemaEmbedding" ("id", "tableId", "content", "embedding", "updatedAt")
+        VALUES (gen_random_uuid(), ${table.id}, ${embeddingText}, ${vectorString}::vector, NOW())
+        ON CONFLICT ("tableId")
+        DO UPDATE SET
+          "content" = EXCLUDED."content",
+          "embedding" = EXCLUDED."embedding",
+          "updatedAt" = NOW();
+      `;
+
+      this.logger.log(`Generated embedding for table ${table.tableName}`);
+    } catch (embedError) {
+      this.logger.error(`Failed to generate embedding for table ${table.tableName}: ${embedError.message}`);
+    }
   }
 
   // ===========================================

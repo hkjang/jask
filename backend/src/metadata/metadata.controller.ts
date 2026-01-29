@@ -49,8 +49,33 @@ export class MetadataController {
 
   @Post('translate/:dataSourceId')
   @ApiOperation({ summary: '메타데이터 AI 번역 (한글화)' })
-  async translateMetadata(@Param('dataSourceId') dataSourceId: string) {
-    return this.metadataService.translateMetadata(dataSourceId);
+  async translateMetadata(
+    @Param('dataSourceId') dataSourceId: string,
+    @Query('untranslatedOnly') untranslatedOnly?: string,
+  ) {
+    const onlyUntranslated = untranslatedOnly === 'true';
+    return this.metadataService.translateMetadata(dataSourceId, onlyUntranslated);
+  }
+
+  @Post('tables/:tableId/translate')
+  @ApiOperation({ summary: '단일 테이블 AI 번역' })
+  async translateTable(@Param('tableId') tableId: string) {
+    return this.metadataService.translateSingleTable(tableId);
+  }
+
+  @Post('tables/:tableId/sync-ai')
+  @ApiOperation({ summary: '단일 테이블 AI 동기화 (임베딩 재생성)' })
+  async syncTableWithAI(@Param('tableId') tableId: string) {
+    return this.metadataService.syncSingleTableWithAI(tableId);
+  }
+
+  @Patch('tables/:tableId/exclude')
+  @ApiOperation({ summary: '테이블 AI 컨텍스트 제외/포함 토글' })
+  async setTableExcluded(
+    @Param('tableId') tableId: string,
+    @Body() body: { isExcluded: boolean },
+  ) {
+    return this.metadataService.setTableExcluded(tableId, body.isExcluded);
   }
 
   @Get('schema/:dataSourceId')

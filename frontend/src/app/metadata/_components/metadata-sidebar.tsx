@@ -4,11 +4,12 @@ import { Button } from "@/components/ui/button";
 import { Database, Table, Search, MoreHorizontal, Pencil, Trash2, Plus, Sparkles, FileSymlink, Circle, AlertTriangle, Eye, LayoutGrid } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Input } from "@/components/ui/input";
-import { 
-  DropdownMenu, 
-  DropdownMenuContent, 
-  DropdownMenuItem, 
-  DropdownMenuTrigger 
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator
 } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
@@ -32,7 +33,8 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
-import { Loader2, CheckCircle } from "lucide-react";
+import { Loader2, CheckCircle, Languages, AlertCircle, MinusCircle, RefreshCw, EyeOff, Eye as EyeIcon } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface MetadataSidebarProps {
   dataSources: any[];
@@ -157,20 +159,17 @@ export function MetadataSidebar({
       }
   };
 
-  const handleTranslateMetadata = async (ds: any) => {
+  const handleTranslateMetadata = async (ds: any, untranslatedOnly: boolean = false) => {
     try {
-      toast({ title: "번역 시작됨", description: "AI가 메타데이터를 번역 중입니다. 잠시만 기다려주세요." });
-      await api.translateMetadata(ds.id);
+      const description = untranslatedOnly
+        ? "AI가 미번역 메타데이터만 번역 중입니다. 잠시만 기다려주세요."
+        : "AI가 전체 메타데이터를 번역 중입니다. 잠시만 기다려주세요.";
+      toast({ title: "번역 시작됨", description });
+      await api.translateMetadata(ds.id, untranslatedOnly);
       toast({ title: "번역 완료", description: "메타데이터 번역이 완료되었습니다." });
-      onRefreshDataSources(); // Refresh to show new descriptions? Or maybe we need to refresh tables explicitly if they are loaded separately.
-      // Ideally we should reload tables for the selected datasource if it matches.
+      onRefreshDataSources();
       if (selectedDataSource?.id === ds.id) {
-          onSelectDataSource(ds); // Re-trigger selection logic to fetch tables
-          // actually onSelectDataSource might just set state. check implementation.
-          // The parent likely handles fetching tables. We might need a way to trigger parent refresh.
-          // onRefreshDataSources is for the list of datasources. 
-          // If tables are passed as props, parent needs to refresh. 
-          // onRefreshDataSources might be enough if parent refetches everything.
+          onSelectDataSource(ds);
       }
     } catch (e: any) {
       toast({ title: "번역 실패", description: e.message, variant: "destructive" });
@@ -178,11 +177,59 @@ export function MetadataSidebar({
   };
 
   const handleCreateClick = () => {
-      // For create, redirect to main datasources page as it's complex 
-      // OR implement simple create here. 
+      // For create, redirect to main datasources page as it's complex
+      // OR implement simple create here.
       // Context implies "Connected ones CUD".. usually implies management.
       // Redirecting is safer for consistent flows.
       router.push('/datasources');
+  };
+
+  // 테이블 단일 번역
+  const handleTranslateTable = async (table: any) => {
+    try {
+      toast({ title: "번역 시작됨", description: `${table.tableName} 테이블을 번역 중입니다...` });
+      await api.translateTable(table.id);
+      toast({ title: "번역 완료", description: `${table.tableName} 테이블 번역이 완료되었습니다.` });
+      onRefreshDataSources();
+      if (selectedDataSource) {
+        onSelectDataSource(selectedDataSource);
+      }
+    } catch (e: any) {
+      toast({ title: "번역 실패", description: e.message, variant: "destructive" });
+    }
+  };
+
+  // AI 컨텍스트에서 제외/포함 토글
+  const handleToggleExclude = async (table: any) => {
+    try {
+      const newExcluded = !table.isExcluded;
+      await api.setTableExcluded(table.id, newExcluded);
+      toast({
+        title: newExcluded ? "AI 컨텍스트에서 제외됨" : "AI 컨텍스트에 포함됨",
+        description: `${table.tableName} 테이블이 ${newExcluded ? '제외' : '포함'}되었습니다.`
+      });
+      onRefreshDataSources();
+      if (selectedDataSource) {
+        onSelectDataSource(selectedDataSource);
+      }
+    } catch (e: any) {
+      toast({ title: "오류", description: e.message, variant: "destructive" });
+    }
+  };
+
+  // AI와 명시적 동기화 (임베딩 재생성)
+  const handleSyncWithAI = async (table: any) => {
+    try {
+      toast({ title: "동기화 시작됨", description: `${table.tableName} 테이블을 AI와 동기화 중입니다...` });
+      await api.syncTableWithAI(table.id);
+      toast({ title: "동기화 완료", description: `${table.tableName} 테이블이 AI와 동기화되었습니다.` });
+      onRefreshDataSources();
+      if (selectedDataSource) {
+        onSelectDataSource(selectedDataSource);
+      }
+    } catch (e: any) {
+      toast({ title: "동기화 실패", description: e.message, variant: "destructive" });
+    }
   };
 
   return (
@@ -211,7 +258,7 @@ export function MetadataSidebar({
                  </Button>
                  <DropdownMenu>
                      <DropdownMenuTrigger asChild>
-                         <Button variant="ghost" size="icon" className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity">
+                         <Button variant="ghost" size="icon" className="h-8 w-8">
                              <MoreHorizontal className="h-3 w-3" />
                          </Button>
                      </DropdownMenuTrigger>
@@ -219,8 +266,11 @@ export function MetadataSidebar({
                           <DropdownMenuItem onClick={() => handleEditClick(ds)}>
                               <Pencil className="h-3 w-3 mr-2" /> 정보 수정
                           </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleTranslateMetadata(ds)}>
-                              <Sparkles className="h-3 w-3 mr-2" /> 번역 (AI)
+                          <DropdownMenuItem onClick={() => handleTranslateMetadata(ds, false)}>
+                              <Sparkles className="h-3 w-3 mr-2" /> 전체 번역 (AI)
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => handleTranslateMetadata(ds, true)}>
+                              <Languages className="h-3 w-3 mr-2" /> 미수행만 번역 (AI)
                           </DropdownMenuItem>
                          <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => confirmDeleteClick(ds)}>
                              <Trash2 className="h-3 w-3 mr-2" /> Delete
@@ -281,26 +331,60 @@ export function MetadataSidebar({
                <span>Tables ({tableCount}) / Views ({viewCount})</span>
              </div>
              {filteredTables.map((t) => (
-                <Button
-                  key={t.id}
-                  variant={selectedTableId === t.id ? "secondary" : "ghost"}
-                  size="sm"
-                  className={`w-full justify-start text-xs h-8 ${t.isExcluded ? 'opacity-50 line-through' : ''}`}
-                  onClick={() => onSelectTable(t.id)}
-                >
-                  {/* Type Icon - VIEW vs TABLE */}
-                  {t.tableType === 'VIEW' ? (
-                    <Eye className="h-3 w-3 text-blue-500 shrink-0" />
-                  ) : (
-                    <StatusIcon status={t.metadataStatus} score={t.completenessScore} />
-                  )}
-                  <span className="truncate flex-1 text-left ml-2">
-                    {t.tableName}
-                    {t.tableType === 'VIEW' && <span className="text-blue-500 text-[10px] ml-1">[VIEW]</span>}
-                  </span>
-                  {t.importanceLevel === 'HIGH' && <span className="w-1.5 h-1.5 rounded-full bg-orange-500 ml-1" />}
-                  {t.importanceLevel === 'CRITICAL' && <span className="w-1.5 h-1.5 rounded-full bg-red-500 ml-1" />}
-                </Button>
+                <div key={t.id} className="flex items-center gap-0.5 group">
+                  <Button
+                    variant={selectedTableId === t.id ? "secondary" : "ghost"}
+                    size="sm"
+                    className={`flex-1 justify-start text-xs h-8 ${t.isExcluded ? 'opacity-50 line-through' : ''}`}
+                    onClick={() => onSelectTable(t.id)}
+                  >
+                    {/* Translation Status Icon */}
+                    <TranslationStatusIcon table={t} />
+                    {/* Type Icon - VIEW vs TABLE */}
+                    {t.tableType === 'VIEW' ? (
+                      <Eye className="h-3 w-3 text-blue-500 shrink-0 ml-1" />
+                    ) : (
+                      <span className="ml-1"><StatusIcon status={t.metadataStatus} score={t.completenessScore} /></span>
+                    )}
+                    <span className="truncate flex-1 text-left ml-2">
+                      {t.tableName}
+                      {t.tableType === 'VIEW' && <span className="text-blue-500 text-[10px] ml-1">[VIEW]</span>}
+                    </span>
+                    {t.importanceLevel === 'HIGH' && <span className="w-1.5 h-1.5 rounded-full bg-orange-500 ml-1" />}
+                    {t.importanceLevel === 'CRITICAL' && <span className="w-1.5 h-1.5 rounded-full bg-red-500 ml-1" />}
+                  </Button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <MoreHorizontal className="h-3 w-3" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-48">
+                      <DropdownMenuItem onClick={() => handleTranslateTable(t)}>
+                        <Sparkles className="h-3.5 w-3.5 mr-2" />
+                        번역 (AI)
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleSyncWithAI(t)}>
+                        <RefreshCw className="h-3.5 w-3.5 mr-2" />
+                        AI와 동기화
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={() => handleToggleExclude(t)}>
+                        {t.isExcluded ? (
+                          <>
+                            <EyeIcon className="h-3.5 w-3.5 mr-2" />
+                            AI 컨텍스트에 포함
+                          </>
+                        ) : (
+                          <>
+                            <EyeOff className="h-3.5 w-3.5 mr-2" />
+                            AI 컨텍스트에서 제외
+                          </>
+                        )}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
              ))}
            </div>
         </div>
@@ -418,4 +502,81 @@ function StatusIcon({ status, score }: { status?: string, score?: number }) {
         return <AlertTriangle className="h-3 w-3 text-yellow-500" />;
     }
     return <Circle className="h-3 w-3 text-muted-foreground" />;
+}
+
+// 번역 상태 계산 함수
+function getTranslationStatus(table: any): 'complete' | 'partial' | 'none' {
+  // 테이블 설명이 있는지 확인
+  const hasTableDescription = !!table.description && table.description.trim().length > 0;
+
+  // 컬럼들 중 번역된 것이 있는지 확인
+  const columns = table.columns || [];
+  const translatedColumns = columns.filter((col: any) =>
+    (col.semanticName && col.semanticName.trim().length > 0) ||
+    (col.description && col.description.trim().length > 0)
+  );
+
+  const hasColumnTranslations = translatedColumns.length > 0;
+  const allColumnsTranslated = columns.length > 0 && translatedColumns.length === columns.length;
+
+  // 완료: 테이블 설명 + 모든 컬럼 번역됨
+  if (hasTableDescription && allColumnsTranslated) {
+    return 'complete';
+  }
+
+  // 부분: 테이블 설명 또는 일부 컬럼만 번역됨
+  if (hasTableDescription || hasColumnTranslations) {
+    return 'partial';
+  }
+
+  // 미수행
+  return 'none';
+}
+
+// 번역 상태 아이콘 컴포넌트
+function TranslationStatusIcon({ table }: { table: any }) {
+  const status = getTranslationStatus(table);
+
+  if (status === 'complete') {
+    return (
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span><Languages className="h-3 w-3 text-green-500 shrink-0" /></span>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>번역 완료</p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    );
+  }
+
+  if (status === 'partial') {
+    return (
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span><Languages className="h-3 w-3 text-yellow-500 shrink-0" /></span>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>부분 번역</p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    );
+  }
+
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span><MinusCircle className="h-3 w-3 text-muted-foreground/50 shrink-0" /></span>
+        </TooltipTrigger>
+        <TooltipContent>
+          <p>번역 미수행</p>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
 }
