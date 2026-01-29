@@ -45,6 +45,10 @@ interface SampleQuery {
   category?: string;
   dataSourceId: string;
   createdAt: string;
+  analysis?: {
+    tables: string[];
+    columns: string[];
+  };
 }
 
 interface DataSource {
@@ -471,6 +475,30 @@ export default function AdminSampleQueriesPage() {
                                         {query.sqlQuery}
                                     </code>
                                 </div>
+                                {query.analysis && (
+                                    <div className="mt-3 space-y-2">
+                                        {query.analysis.tables && query.analysis.tables.length > 0 && (
+                                            <div className="flex flex-wrap gap-1.5 items-center text-xs">
+                                                <span className="font-semibold text-muted-foreground mr-1">Tables:</span>
+                                                {query.analysis.tables.map((table, idx) => (
+                                                    <span key={idx} className="px-2 py-0.5 bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 rounded-md border border-blue-200 dark:border-blue-800">
+                                                        {table}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        )}
+                                        {query.analysis.columns && query.analysis.columns.length > 0 && (
+                                            <div className="flex flex-wrap gap-1.5 items-center text-xs">
+                                                <span className="font-semibold text-muted-foreground mr-1">Columns:</span>
+                                                {query.analysis.columns.map((col, idx) => (
+                                                    <span key={idx} className="px-2 py-0.5 bg-slate-100 text-slate-700 dark:bg-slate-800/50 dark:text-slate-300 rounded-md border border-slate-200 dark:border-slate-700">
+                                                        {col}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                             <div className="flex gap-2 flex-shrink-0">
                                 <Button variant="ghost" size="icon" onClick={() => openEdit(query)}>
