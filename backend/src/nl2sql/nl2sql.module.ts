@@ -6,8 +6,10 @@ import { LLMModule } from '../llm/llm.module';
 import { ValidationModule } from '../validation/validation.module';
 import { ExecutionModule } from '../execution/execution.module';
 
+import { EmbeddingModule } from '../embedding/embedding.module';
+
 @Module({
-  imports: [MetadataModule, LLMModule, ValidationModule, ExecutionModule],
+  imports: [MetadataModule, LLMModule, ValidationModule, ExecutionModule, EmbeddingModule],
   providers: [NL2SQLService],
   controllers: [NL2SQLController],
   exports: [NL2SQLService],

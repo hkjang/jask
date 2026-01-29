@@ -14,6 +14,13 @@ export interface NL2SQLRequest {
   threadId?: string;
 }
 
+export interface SampleQueryInfo {
+  id: string; // Add ID for interactivity
+  question: string;
+  sql: string;
+  score: number;
+}
+
 export interface NL2SQLResponse {
   queryId: string;
   question: string;
@@ -25,6 +32,9 @@ export interface NL2SQLResponse {
   status: QueryStatus;
 }
 
+import { EmbeddingService } from '../embedding/embedding.service';
+import { EmbeddableType } from '../embedding/dto/embedding.dto';
+
 @Injectable()
 export class NL2SQLService {
   private readonly logger = new Logger(NL2SQLService.name);
@@ -35,11 +45,13 @@ export class NL2SQLService {
     private llmService: LLMService,
     private validationService: ValidationService,
     private executionService: ExecutionService,
+    private embeddingService: EmbeddingService,
   ) {}
 
   async *generateAndExecuteStream(request: NL2SQLRequest): AsyncGenerator<any> {
     const { dataSourceId, question, userId, autoExecute, threadId } = request;
     let referencedTablesMarkdown = '';
+    let sampleQueryListMarkdown = ''; // Capture for persistent storage
 
     yield { type: 'step_start', step: 'schema', message: '스키마 컨텍스트 조회 (Vector Search) 중...' };
     
@@ -77,7 +89,7 @@ export class NL2SQLService {
       // Persist in message content for history
       const tableLinks = schemaSearch.tables.map(t => `[${t}](table:${t})`).join(', ');
       referencedTablesMarkdown = `**참조 테이블**: ${tableLinks}\n\n`;
-      yield { type: 'content_chunk', content: referencedTablesMarkdown };
+      // yield { type: 'content_chunk', content: referencedTablesMarkdown }; // Removed to avoid duplication in UI
     }
     
     // If schema is empty but DDL is allowed, provide minimal context for DDL queries
@@ -107,6 +119,83 @@ Note: This database currently has no tables. You can create new tables.`;
 - Table and column names should be UPPERCASE or wrapped in double quotes`;
     } else if (dbType.toLowerCase().includes('mysql') || dbType.toLowerCase().includes('mariadb')) {
       dbSpecificRules = '6. You MUST wrap all table and column names in BACKTICKS (e.g. `TableName`, `ColumnName`).';
+    }
+
+    // 1.5 Sample Query Search (High Precision)
+    let sampleQueryContext = '';
+    try {
+      const sampleSearch = await this.embeddingService.search({
+        query: question,
+        dataSourceId,
+        type: EmbeddableType.SAMPLE_QUERY,
+        topK: 3,
+        searchMethod: 'HYBRID' as any, 
+      });
+
+      // User requested high threshold (e.g. 0.85)
+      // Note: hybridScore is normalized 0-1 usually, but depends on implementation.
+      // RRF scores are usually smaller. Let's check denseScore or rely on hybrid but lower threshold?
+      // RRF: sum(1/(k+r)) -> max is approx k * (1/k) = 1? no. 
+      // If dense weight is high, it might be okay. 
+      // Let's use denseScore as primary for "similarity" threshold if available, else hybrid.
+      // The user said "High threshold".
+      
+      // Let's use denseScore as primary for "similarity" threshold if available, else hybrid.
+      // The user said "High threshold".
+      
+      const threshold = 0.8; // Reverted to 0.8
+      
+      // Debug logging to understand scores
+      if (sampleSearch.results.length > 0) {
+        this.logger.debug(`[Sample Query] Top candidates:`);
+        sampleSearch.results.forEach((r, i) => {
+             this.logger.debug(`  #${i+1}: "${r.content.substring(0, 50)}..." | Dense: ${r.denseScore?.toFixed(4)} | Hybrid: ${r.hybridScore?.toFixed(4)}`);
+        });
+      }
+
+      const highQualitySamples = sampleSearch.results.filter(r => {
+          const score = r.denseScore ?? r.hybridScore ?? 0;
+          return score >= threshold;
+      });
+
+       if (highQualitySamples.length > 0) {
+        this.logger.log(`[Sample Query] Found ${highQualitySamples.length} relevant samples (score >= ${threshold})`);
+        
+        sampleQueryContext = `\n\nReference the following similar questions and their valid SQL queries to answer the user's question. THESE ARE HIGHLY RELEVANT EXAMPLES. Follow their pattern:\n`;
+        const samplesForUI: SampleQueryInfo[] = [];
+
+        highQualitySamples.forEach(sample => {
+             const sql = sample.metadata?.sql || '';
+             this.logger.debug(`[Sample Query] Checking metadata: ${JSON.stringify(sample.metadata)}, SQL: ${sql}`);
+             if (sql) {
+                 sampleQueryContext += `\nExample Question: ${sample.content}\nValid SQL: ${sql}\n`;
+                 samplesForUI.push({ 
+                     id: sample.id, // Pass ID
+                     question: sample.content, 
+                     sql: sql, 
+                     score: sample.denseScore ?? sample.hybridScore ?? 0 
+                 });
+             }
+        });
+        
+        if (samplesForUI.length > 0) {
+             yield { type: 'sample_queries_found', samples: samplesForUI };
+             
+             // Format similar to Referenced Tables: **References**: ...
+             // Using list format for readability as questions can be long
+             // Changed to custom link format [Question](sample:ID) for interactive modal
+             const sampleListMarkdown = samplesForUI
+                .map(s => `- [${s.question}](sample:${s.id}) (유사도: ${(s.score * 100).toFixed(0)}%)`)
+                .join('\n');
+             
+             sampleQueryListMarkdown = `**참조 샘플 쿼리**:\n${sampleListMarkdown}\n\n`;
+             yield { type: 'content_chunk', content: sampleQueryListMarkdown };
+        }
+      } else {
+        this.logger.debug(`[Sample Query] No samples met threshold ${threshold}`);
+      }
+    } catch (e) {
+      this.logger.warn(`Failed to search sample queries: ${e.message}`);
     }
 
     const queryHistory = await this.prisma.queryHistory.create({
@@ -192,7 +281,8 @@ For Oracle database specifically:
 ${customInstructions ? `\nUser Custom Instructions:\n${customInstructions}` : ''}
 
 Database Schema:
-${schemaContext}`;
+${schemaContext}
+${sampleQueryContext}`;
 
       const sqlStream = this.llmService.generateStream({
         prompt: promptWithHistory,
@@ -337,7 +427,8 @@ ${schemaContext}`;
                data: {
                    threadId,
                    role: 'ASSISTANT',
-                   content: `${referencedTablesMarkdown}### SQL Generated\n\`\`\`sql\n${generatedSql}\n\`\`\`\n\n### Explanation\n${explanation}`,
+                   // Corrected: Remove referencedTablesMarkdown (duplicate), Add sampleQueryListMarkdown
+                   content: `${sampleQueryListMarkdown}### 1. SQL Generation\n\`\`\`sql\n${generatedSql}\n\`\`\`\n\n\n\n### 2. Explanation\n${explanation}`,
                    queryId: queryHistory.id
                }
            });
@@ -524,6 +615,42 @@ ${schemaContext}`;
       } else {
          throw new BadRequestException('데이터소스의 메타데이터를 먼저 동기화해주세요.');
       }
+
+      // 1.5 Sample Query Search (High Precision)
+      try {
+        const sampleSearch = await this.embeddingService.search({
+          query: question,
+          dataSourceId,
+          type: EmbeddableType.SAMPLE_QUERY,
+          topK: 3,
+          searchMethod: 'HYBRID' as any,
+        });
+  
+        const threshold = 0.80;
+
+        if (sampleSearch.results.length > 0) {
+            this.logger.debug(`[Sample Query] Top candidates (Non-stream):`);
+            sampleSearch.results.forEach((r, i) => {
+                 this.logger.debug(`  #${i+1}: "${r.content.substring(0, 50)}..." | Dense: ${r.denseScore?.toFixed(4)} | Hybrid: ${r.hybridScore?.toFixed(4)}`);
+            });
+        }
+  
+        const highQualitySamples = sampleSearch.results.filter(r => (r.denseScore ?? r.hybridScore ?? 0) >= threshold);
+  
+        if (highQualitySamples.length > 0) {
+        let sampleQueryContext = `\n\nReference the following similar questions and their valid SQL queries:\n`;
+        highQualitySamples.forEach(sample => {
+             const sql = sample.metadata?.sql || '';
+             if (sql) {
+                 sampleQueryContext += `\nExample Question: ${sample.content}\nValid SQL: ${sql}\n`;
+             }
+        });
+        schemaContext += sampleQueryContext;
+        this.logger.log(`[Sample Query] Appended ${highQualitySamples.length} samples to context`);
+      }
+    } catch (e) {
+      this.logger.warn(`Failed to search sample queries: ${e.message}`);
+    }
     }
 
     // 2. 쿼리 히스토리 생성

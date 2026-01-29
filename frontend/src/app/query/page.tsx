@@ -651,6 +651,7 @@ function QueryPageContent() {
       await api.addMessage(currentThreadId!, { role: 'USER', content: currentInput });
 
       let currentContent = '';
+      let preamble = '';
       let currentSql = '';
       let sqlExplanation = '';
       let tokenUsage = { prompt: 0, completion: 0, total: 0 };
@@ -670,28 +671,33 @@ function QueryPageContent() {
         } else if (chunk.type === 'content_chunk') {
           if (chunk.step === 'sql_generation') {
             currentSql += chunk.content;
-            const displayContent = `### 1. SQL Generation\n\`\`\`sql\n${currentSql}\n\`\`\`\n\n`;
-            
-            setMessages((prev) => prev.map(msg => 
-              msg.id === assistantMessage.id 
-                ? { ...msg, isLoading: true, content: displayContent, sql: currentSql } 
-                : msg
-            ));
           } else if (chunk.step === 'explanation') {
             sqlExplanation += chunk.content;
-            const displayContent = `### 1. SQL Generation\n\`\`\`sql\n${currentSql}\n\`\`\`\n\n### 2. Explanation\n${sqlExplanation}`;
-            
-            setMessages((prev) => prev.map(msg => 
-              msg.id === assistantMessage.id 
-                ? { 
-                    ...msg, 
-                    content: displayContent, 
-                    sql: currentSql,
-                    isLoading: false 
-                  } 
-                : msg
-            ));
+          } else {
+            // General content (Referenced Tables, Sample Queries, etc.)
+            preamble += chunk.content;
           }
+
+          // Construct display content
+          let displayContent = preamble;
+          
+          if (currentSql) {
+             displayContent += `### 1. SQL Generation\n\`\`\`sql\n${currentSql}\n\`\`\`\n\n`;
+          }
+          if (sqlExplanation) {
+             displayContent += `### 2. Explanation\n${sqlExplanation}`;
+          }
+
+          setMessages((prev) => prev.map(msg => 
+            msg.id === assistantMessage.id 
+              ? { 
+                  ...msg, 
+                  isLoading: true, 
+                  content: displayContent, 
+                  sql: currentSql 
+                } 
+              : msg
+          ));
         } else if (chunk.type === 'token_usage') {
              // ... usage handling ...
         } else if (chunk.type === 'execution_result') {

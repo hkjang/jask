@@ -102,7 +102,9 @@ export default function EmbeddingManagementPage() {
 
   // Dialog states
   const [isConfigDialogOpen, setIsConfigDialogOpen] = useState(false);
+  const [isSampleDialogOpen, setIsSampleDialogOpen] = useState(false); // For Sample Query
   const [selectedItem, setSelectedItem] = useState<any>(null);
+  const [selectedType, setSelectedType] = useState<string>('TABLE'); // 'TABLE' | 'SAMPLE_QUERY'
   const [editingConfig, setEditingConfig] = useState<EmbeddingConfig | null>(null);
   const [configForm, setConfigForm] = useState({
     name: '',
@@ -130,8 +132,8 @@ export default function EmbeddingManagementPage() {
   });
 
   const { data: itemsData, isLoading: itemsLoading } = useQuery({
-    queryKey: ['embeddableItems'],
-    queryFn: () => api.getEmbeddableItems({ limit: 50 }),
+    queryKey: ['embeddableItems', selectedType],
+    queryFn: () => api.getEmbeddableItems({ limit: 50, type: selectedType }),
   });
 
   const { data: dataSources = [] } = useQuery({
@@ -616,39 +618,56 @@ export default function EmbeddingManagementPage() {
 
           {/* Items Tab */}
           <TabsContent value="items" className="space-y-4">
-            <div className="flex justify-between items-center">
-              <div>
-                <h2 className="text-xl font-semibold">임베딩 항목</h2>
-                <p className="text-sm text-muted-foreground">
-                  임베딩된 항목 {totalItems}개
-                </p>
-              </div>
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  onClick={() => syncMetadataMutation.mutate()}
-                  disabled={syncMetadataMutation.isPending}
-                >
-                  {syncMetadataMutation.isPending ? (
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  ) : (
-                    <Database className="h-4 w-4 mr-2" />
+            <div className="flex flex-col gap-4">
+              <div className="flex justify-between items-center">
+                <div>
+                  <h2 className="text-xl font-semibold">임베딩 항목</h2>
+                  <p className="text-sm text-muted-foreground">
+                    임베딩된 항목 {totalItems}개
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  {selectedType === 'SAMPLE_QUERY' && (
+                    <Button onClick={() => window.location.href = '/admin/sample-queries'}>
+                        <Plus className="h-4 w-4 mr-2" />
+                        샘플 쿼리 관리 이동
+                    </Button>
                   )}
-                  메타데이터 동기화
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => batchEmbedMutation.mutate({})}
-                  disabled={batchEmbedMutation.isPending}
-                >
-                  {batchEmbedMutation.isPending ? (
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  ) : (
-                    <RefreshCw className="h-4 w-4 mr-2" />
-                  )}
-                  배치 임베딩
-                </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => syncMetadataMutation.mutate()}
+                    disabled={syncMetadataMutation.isPending}
+                  >
+                    {syncMetadataMutation.isPending ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <Database className="h-4 w-4 mr-2" />
+                    )}
+                    메타데이터 동기화
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => batchEmbedMutation.mutate({})}
+                    disabled={batchEmbedMutation.isPending}
+                  >
+                    {batchEmbedMutation.isPending ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <RefreshCw className="h-4 w-4 mr-2" />
+                    )}
+                    배치 임베딩
+                  </Button>
+                </div>
               </div>
+
+              <Tabs value={selectedType} onValueChange={(val) => setSelectedType(val)} className="w-full">
+                <TabsList className="grid w-full grid-cols-4 max-w-2xl">
+                  <TabsTrigger value="TABLE">테이블</TabsTrigger>
+                  <TabsTrigger value="COLUMN">컬럼</TabsTrigger>
+                  <TabsTrigger value="SAMPLE_QUERY">샘플 쿼리</TabsTrigger>
+                  <TabsTrigger value="DOCUMENT">문서</TabsTrigger>
+                </TabsList>
+              </Tabs>
             </div>
 
             {itemsLoading ? (

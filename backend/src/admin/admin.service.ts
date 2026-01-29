@@ -4,6 +4,9 @@ import { LLMService } from '../llm/llm.service';
 import { AuditService } from '../audit/audit.service';
 import * as bcrypt from 'bcrypt';
 
+import { EmbeddingService } from '../embedding/embedding.service';
+import { EmbeddableType } from '../embedding/dto/embedding.dto';
+
 @Injectable()
 export class AdminService {
   private readonly logger = new Logger(AdminService.name);
@@ -12,6 +15,7 @@ export class AdminService {
     private prisma: PrismaService,
     private llmService: LLMService,
     private auditService: AuditService,
+    private embeddingService: EmbeddingService,
   ) {}
 
   // LLM 프로바이더 관리
@@ -374,20 +378,30 @@ export class AdminService {
     // 1. Create Basic Record
     const sample = await this.prisma.sampleQuery.create({ data });
 
-    // 2. Generate and Update Embedding
+    // 2. Sync with EmbeddableItem
     try {
-      const embeddingText = `Question: ${data.naturalQuery}\nSQL: ${data.sqlQuery}\nDescription: ${data.description || ''}`;
-      const embedding = await this.llmService.generateEmbedding(embeddingText);
-      const vectorString = `[${embedding.join(',')}]`;
-
-      await this.prisma.$executeRaw`
-        UPDATE "SampleQuery"
-        SET "embedding" = ${vectorString}::vector
-        WHERE "id" = ${sample.id}
-      `;
-      this.logger.log(`Created embedding for sample query ${sample.id}`);
+      // Optimize for similarity search: Use ONLY the natural query for embedding content.
+      const content = data.naturalQuery;
+      
+      const embeddableItem = await this.embeddingService.createItem({
+        type: EmbeddableType.SAMPLE_QUERY,
+        sourceId: sample.id,
+        content: content,
+        dataSourceId: data.dataSourceId,
+        metadata: {
+            sql: data.sqlQuery,
+            question: data.naturalQuery,
+            description: data.description,
+            tags: data.tags
+        }
+      });
+      
+      // Generate Embedding immediately
+      await this.embeddingService.generateEmbedding(embeddableItem.id);
+      
+      this.logger.log(`Created and embedded SampleQuery item ${sample.id}`);
     } catch (e) {
-      this.logger.warn(`Failed to generate embedding for sample query ${sample.id}: ${e.message}`);
+      this.logger.warn(`Failed to sync SampleQuery to EmbeddableItem: ${e.message}`);
     }
 
     return sample;
@@ -405,24 +419,52 @@ export class AdminService {
       data,
     });
 
-    // If natural query or sql changed, update embedding
+    // Sync Update to EmbeddableItem
     if (data.naturalQuery || data.sqlQuery || data.description) {
       try {
         const fullSample = await this.prisma.sampleQuery.findUnique({ where: { id } });
         if (fullSample) {
-            const embeddingText = `Question: ${fullSample.naturalQuery}\nSQL: ${fullSample.sqlQuery}\nDescription: ${fullSample.description || ''}`;
-            const embedding = await this.llmService.generateEmbedding(embeddingText);
-            const vectorString = `[${embedding.join(',')}]`;
+            // Optimize for similarity search: Use ONLY the natural query for embedding content.
+            const content = fullSample.naturalQuery;
+            
+            // Find existing item
+            const existingItem = await this.prisma.embeddableItem.findFirst({
+                where: { sourceId: id, type: EmbeddableType.SAMPLE_QUERY }
+            });
 
-            await this.prisma.$executeRaw`
-                UPDATE "SampleQuery"
-                SET "embedding" = ${vectorString}::vector
-                WHERE "id" = ${id}
-            `;
-            this.logger.log(`Updated embedding for sample query ${id}`);
+            if (existingItem) {
+                await this.embeddingService.updateItem(existingItem.id, {
+                    content,
+                    metadata: {
+                        sql: fullSample.sqlQuery,
+                        question: fullSample.naturalQuery,
+                        description: fullSample.description,
+                        tags: fullSample.tags
+                    },
+                    isActive: data.isVerified // If verification status changes, maybe toggle active? For now keep true.
+                });
+                await this.embeddingService.generateEmbedding(existingItem.id);
+            } else {
+                // If missing, create it
+                const newItem = await this.embeddingService.createItem({
+                    type: EmbeddableType.SAMPLE_QUERY,
+                    sourceId: id,
+                    content,
+                    dataSourceId: fullSample.dataSourceId,
+                    metadata: {
+                        sql: fullSample.sqlQuery,
+                        question: fullSample.naturalQuery,
+                        description: fullSample.description,
+                        tags: fullSample.tags
+                    }
+                });
+                await this.embeddingService.generateEmbedding(newItem.id);
+            }
+            
+            this.logger.log(`Updated EmbeddableItem for SampleQuery ${id}`);
         }
       } catch (e) {
-        this.logger.warn(`Failed to update embedding for sample query ${id}: ${e.message}`);
+        this.logger.warn(`Failed to update EmbeddableItem for SampleQuery ${id}: ${e.message}`);
       }
     }
 
@@ -430,6 +472,13 @@ export class AdminService {
   }
 
   async deleteSampleQuery(id: string) {
+    // Delete associated EmbeddableItem first
+    try {
+        await this.prisma.embeddableItem.deleteMany({
+            where: { sourceId: id, type: EmbeddableType.SAMPLE_QUERY }
+        });
+    } catch (e) {}
+
     return this.prisma.sampleQuery.delete({ where: { id } });
   }
 

@@ -171,10 +171,16 @@ export class EmbeddingService {
     try {
       const embedding = await this.llmService.generateEmbedding(item.content);
       const vectorString = `[${embedding.join(',')}]`;
+      
+      // Ensure tokens are calculated (fix for seed data or legacy items)
+      const tokens = this.tokenize(item.content);
+      const tokenCount = tokens.length;
 
       await this.prisma.$executeRaw`
         UPDATE "EmbeddableItem"
         SET "embedding" = ${vectorString}::vector,
+            "tokens" = ${tokens},
+            "tokenCount" = ${tokenCount},
             "lastEmbeddedAt" = NOW(),
             "updatedAt" = NOW()
         WHERE "id" = ${itemId}
@@ -192,8 +198,13 @@ export class EmbeddingService {
     const where: any = { isActive: true };
     if (dto.dataSourceId) where.dataSourceId = dto.dataSourceId;
     if (dto.type) where.type = dto.type;
+    
     if (!dto.forceRegenerate) {
-      where.lastEmbeddedAt = null;
+      // Process if never embedded OR if token count is suspicious (0)
+      where.OR = [
+        { lastEmbeddedAt: null },
+        { tokenCount: 0 } 
+      ];
     }
 
     const items = await this.prisma.embeddableItem.findMany({
@@ -888,28 +899,51 @@ export class EmbeddingService {
         return;
       }
 
-      const content = `Question: ${sampleQuery.naturalQuery}\nSQL: ${sampleQuery.sqlQuery}${sampleQuery.description ? `\nDescription: ${sampleQuery.description}` : ''}`;
+      // Optimize for similarity search: Use ONLY the natural query for embedding content.
+      // SQL and description are stored in metadata for retrieval.
+      const content = sampleQuery.naturalQuery; // was: `Question: ...\nSQL: ...`
       const tokens = this.tokenize(content);
       const contentHash = this.hashContent(content);
 
-      const existingItem = await this.prisma.embeddableItem.findFirst({
+      // Find ALL existing items to handle duplicates from seeding
+      const existingItems = await this.prisma.embeddableItem.findMany({
         where: { sourceId: sampleQueryId, type: 'SAMPLE_QUERY' },
+        orderBy: { createdAt: 'desc' }
       });
 
-      if (existingItem) {
-        if (existingItem.contentHash !== contentHash) {
-          await this.prisma.embeddableItem.update({
-            where: { id: existingItem.id },
-            data: {
-              content,
-              contentHash,
-              tokens,
-              tokenCount: tokens.length,
-              lastEmbeddedAt: null,
-              metadata: { tags: sampleQuery.tags },
-            },
-          });
+      if (existingItems.length > 0) {
+        const targetItem = existingItems[0];
+        
+        // Remove duplicates if any
+        if (existingItems.length > 1) {
+             const idsToDelete = existingItems.slice(1).map(i => i.id);
+             await this.prisma.embeddableItem.deleteMany({
+                 where: { id: { in: idsToDelete } }
+             });
         }
+
+        // Always update metadata, even if content matches (to fix broken metadata)
+        const updateData: any = {
+            metadata: { 
+                tags: sampleQuery.tags,
+                sql: sampleQuery.sqlQuery,
+                question: sampleQuery.naturalQuery,
+                description: sampleQuery.description
+            }
+        };
+
+        if (targetItem.contentHash !== contentHash) {
+          updateData.content = content;
+          updateData.contentHash = contentHash;
+          updateData.tokens = tokens;
+          updateData.tokenCount = tokens.length;
+          updateData.lastEmbeddedAt = null; // Re-embed needed
+        }
+
+        await this.prisma.embeddableItem.update({
+            where: { id: targetItem.id },
+            data: updateData,
+        });
       } else {
         await this.prisma.embeddableItem.create({
           data: {
@@ -919,8 +953,13 @@ export class EmbeddingService {
             contentHash,
             tokens,
             tokenCount: tokens.length,
-            dataSourceId: null, // Global SampleQuery, or sampleQuery.dataSourceId if it exists
-            metadata: { tags: sampleQuery.tags },
+            dataSourceId: null, // Global SampleQuery
+            metadata: { 
+                tags: sampleQuery.tags,
+                sql: sampleQuery.sqlQuery,
+                question: sampleQuery.naturalQuery,
+                description: sampleQuery.description
+            },
           },
         });
       }
