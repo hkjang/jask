@@ -48,8 +48,8 @@ export default function AdminDashboardPage() {
     }
   };
 
-  if (loading) return <MainLayout><div>Loading...</div></MainLayout>;
-  if (!stats) return <MainLayout><div>Failed to load stats</div></MainLayout>;
+  if (loading) return <MainLayout><div>로딩 중...</div></MainLayout>;
+  if (!stats) return <MainLayout><div>통계를 불러오는데 실패했습니다</div></MainLayout>;
 
   // Transform Data for Charts
   const statusData = Object.keys(stats.queryStats).map(key => ({
@@ -63,8 +63,8 @@ export default function AdminDashboardPage() {
   }));
 
   const feedbackData = [
-      { name: 'Positive', value: stats.feedbackStats?.POSITIVE || 0, color: '#22c55e' },
-      { name: 'Negative', value: stats.feedbackStats?.NEGATIVE || 0, color: '#ef4444' }
+      { name: '긍정적', value: stats.feedbackStats?.POSITIVE || 0, color: '#22c55e' },
+      { name: '부정적', value: stats.feedbackStats?.NEGATIVE || 0, color: '#ef4444' }
   ];
 
   const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8'];
@@ -79,25 +79,25 @@ export default function AdminDashboardPage() {
     <MainLayout>
       <div className="space-y-6 p-6">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
-          <p className="text-muted-foreground">System Overview & Monitoring</p>
+          <h1 className="text-3xl font-bold tracking-tight">대시보드</h1>
+          <p className="text-muted-foreground">시스템 현황 및 모니터링</p>
         </div>
 
         {/* Top Cards */}
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Queries</CardTitle>
+              <CardTitle className="text-sm font-medium">총 쿼리 수</CardTitle>
               <Activity className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{stats.totalQueries}</div>
-              <p className="text-xs text-muted-foreground">+20.1% from last month</p>
+              <p className="text-xs text-muted-foreground">지난달 대비 +20.1%</p>
             </CardContent>
           </Card>
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Active Users</CardTitle>
+              <CardTitle className="text-sm font-medium">활성 사용자</CardTitle>
               <Users className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
@@ -106,7 +106,7 @@ export default function AdminDashboardPage() {
           </Card>
            <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Data Sources</CardTitle>
+              <CardTitle className="text-sm font-medium">데이터 소스</CardTitle>
               <Database className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
@@ -115,12 +115,12 @@ export default function AdminDashboardPage() {
           </Card>
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Avg Trust Score</CardTitle>
+              <CardTitle className="text-sm font-medium">평균 신뢰도</CardTitle>
               <ShieldCheck className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{(stats.avgTrustScore * 100).toFixed(0)}%</div>
-               <p className="text-xs text-muted-foreground">Based on successful queries</p>
+               <p className="text-xs text-muted-foreground">성공한 쿼리 기준</p>
             </CardContent>
           </Card>
         </div>
@@ -129,7 +129,7 @@ export default function AdminDashboardPage() {
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
           <Card className="col-span-4">
             <CardHeader>
-              <CardTitle>Query Status Overview</CardTitle>
+              <CardTitle>쿼리 상태 현황</CardTitle>
             </CardHeader>
             <CardContent className="pl-2">
               <div className="h-[300px]">
@@ -148,8 +148,8 @@ export default function AdminDashboardPage() {
           
           <Card className="col-span-3">
              <CardHeader>
-              <CardTitle>Risk Level Distribution</CardTitle>
-              <CardDescription>Risk analysis of generated SQL</CardDescription>
+              <CardTitle>위험도 분포</CardTitle>
+              <CardDescription>생성된 SQL의 위험도 분석</CardDescription>
             </CardHeader>
             <CardContent>
                  <div className="h-[300px]">
@@ -188,20 +188,20 @@ export default function AdminDashboardPage() {
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
             <Card className="col-span-3">
                  <CardHeader>
-                  <CardTitle>User Feedback</CardTitle>
-                  <CardDescription>Positive vs Negative reactions</CardDescription>
+                  <CardTitle>사용자 피드백</CardTitle>
+                  <CardDescription>긍정적 vs 부정적 반응</CardDescription>
                 </CardHeader>
                 <CardContent>
                      <div className="flex justify-around items-center h-[200px]">
                         <div className="text-center">
                             <ThumbsUp className="h-8 w-8 text-green-500 mx-auto mb-2" />
                             <div className="text-2xl font-bold">{stats.feedbackStats?.POSITIVE || 0}</div>
-                            <div className="text-sm text-muted-foreground">Positive</div>
+                            <div className="text-sm text-muted-foreground">긍정적</div>
                         </div>
                         <div className="text-center">
                              <ThumbsDown className="h-8 w-8 text-red-500 mx-auto mb-2" />
                             <div className="text-2xl font-bold">{stats.feedbackStats?.NEGATIVE || 0}</div>
-                            <div className="text-sm text-muted-foreground">Negative</div>
+                            <div className="text-sm text-muted-foreground">부정적</div>
                         </div>
                      </div>
                 </CardContent>
@@ -209,8 +209,8 @@ export default function AdminDashboardPage() {
 
              <Card className="col-span-4">
                 <CardHeader>
-                  <CardTitle>Recent Queries</CardTitle>
-                  <CardDescription>Latest system activity</CardDescription>
+                  <CardTitle>최근 쿼리</CardTitle>
+                  <CardDescription>최근 시스템 활동 내역</CardDescription>
                 </CardHeader>
                 <CardContent>
                     <div className="space-y-4">
