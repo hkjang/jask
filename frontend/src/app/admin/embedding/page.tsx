@@ -196,6 +196,28 @@ export default function EmbeddingManagementPage() {
     onError: () => toast({ title: '검색 실패', variant: 'destructive' }),
   });
 
+  const updateItemMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: any }) => {
+      return api.updateEmbeddableItem(id, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['embeddableItems'] });
+      toast({ title: '항목이 수정되었습니다' });
+    },
+    onError: () => toast({ title: '수정 실패', variant: 'destructive' }),
+  });
+
+  const generateEmbeddingMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return api.generateItemEmbedding(id);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['embeddableItems'] });
+      toast({ title: '임베딩이 생성되었습니다' });
+    },
+    onError: () => toast({ title: '임베딩 생성 실패', variant: 'destructive' }),
+  });
+
   const resetConfigForm = () => {
     setConfigForm({
       name: '',
@@ -272,7 +294,7 @@ export default function EmbeddingManagementPage() {
 
   return (
     <MainLayout>
-      <div className="container max-w-6xl py-8">
+      <div className="w-full px-6 py-8">
         <div className="mb-6">
           <h1 className="text-3xl font-bold flex items-center gap-2">
             <Sparkles className="h-8 w-8" />
@@ -712,17 +734,51 @@ export default function EmbeddingManagementPage() {
                           )}
                         </div>
                       </div>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="ml-2"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedItem(item);
-                        }}
-                      >
-                        <Eye className="h-4 w-4" />
-                      </Button>
+                      <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 mx-4">
+                          <Switch
+                            checked={item.isActive}
+                            onCheckedChange={(checked) => {
+                              updateItemMutation.mutate({
+                                id: item.id,
+                                data: { isActive: checked }
+                              });
+                            }}
+                          />
+                          <span className="text-xs text-muted-foreground w-12">
+                            {item.isActive ? '포함' : '제외'}
+                          </span>
+                        </div>
+
+                        <Button 
+                          variant="ghost" 
+                          size="icon"
+                          title="임베딩 생성"
+                          disabled={generateEmbeddingMutation.isPending}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            generateEmbeddingMutation.mutate(item.id);
+                          }}
+                        >
+                          {generateEmbeddingMutation.isPending && selectedItem?.id === item.id ? (
+                             <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                             <Play className="h-4 w-4" />
+                          )}
+                        </Button>
+
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="ml-2"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedItem(item);
+                          }}
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </CardContent>
                   </Card>
                 ))}
@@ -869,6 +925,41 @@ export default function EmbeddingManagementPage() {
 
             {selectedItem && (
               <div className="space-y-6">
+                <div className="flex items-center gap-4 p-4 border rounded-lg bg-background">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium">상태:</span>
+                    <Switch
+                        checked={selectedItem.isActive}
+                        onCheckedChange={(checked) => {
+                          updateItemMutation.mutate({
+                            id: selectedItem.id,
+                            data: { isActive: checked }
+                          });
+                          setSelectedItem((prev: any) => ({ ...prev, isActive: checked }));
+                        }}
+                    />
+                    <span className="text-xs text-muted-foreground whitespace-nowrap">
+                        {selectedItem.isActive ? '포함' : '제외'}
+                    </span>
+                  </div>
+                  <div className="h-4 w-px bg-border" />
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    className="gap-2"
+                    disabled={generateEmbeddingMutation.isPending}
+                    onClick={() => {
+                        generateEmbeddingMutation.mutate(selectedItem.id);
+                    }}
+                  >
+                    {generateEmbeddingMutation.isPending ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                        <Play className="h-4 w-4" />
+                    )}
+                    임베딩 생성
+                  </Button>
+                </div>
                 {/* 점수 정보 (검색 결과인 경우) */}
                 {(selectedItem.denseScore !== undefined || selectedItem.sparseScore !== undefined) && (
                   <div className="flex gap-4 p-4 bg-muted rounded-lg">
