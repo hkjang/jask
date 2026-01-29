@@ -37,6 +37,10 @@ import { api } from '@/lib/api';
 import { useToast } from '@/components/ui/use-toast';
 import { FileText, Plus, Edit2, Trash2, Search, Loader2, Sparkles } from 'lucide-react';
 import { useState } from 'react';
+import Editor from 'react-simple-code-editor';
+import { highlight, languages } from 'prismjs';
+import 'prismjs/components/prism-sql';
+import 'prismjs/themes/prism.css';
 
 interface SampleQuery {
   id: string;
@@ -257,7 +261,6 @@ export default function AdminSampleQueriesPage() {
     }
   };
 
-
   return (
     <MainLayout>
       <div className="w-full px-6 py-8">
@@ -417,7 +420,7 @@ export default function AdminSampleQueriesPage() {
                   쿼리 추가
                 </Button>
               </DialogTrigger>
-              <DialogContent className="sm:max-w-[600px]">
+              <DialogContent className="sm:max-w-[900px]">
                 <DialogHeader>
                   <DialogTitle>{editingQuery ? '샘플 쿼리 수정' : '새 샘플 쿼리'}</DialogTitle>
                   <DialogDescription>
@@ -488,13 +491,22 @@ export default function AdminSampleQueriesPage() {
                             </Button>
                         </div>
                     </div>
-                    <Textarea
-                      value={formData.sqlQuery}
-                      onChange={(e) => setFormData({ ...formData, sqlQuery: e.target.value })}
-                      placeholder="SELECT count(*) FROM users WHERE ..."
-                      rows={5}
-                      className={`font-mono text-sm ${executionError ? 'border-red-500 focus-visible:ring-red-500' : ''}`}
-                    />
+
+                    <div className={`border rounded-md overflow-hidden ${executionError ? 'border-red-500' : ''}`}>
+                        <Editor
+                            value={formData.sqlQuery}
+                            onValueChange={(code) => setFormData({ ...formData, sqlQuery: code })}
+                            highlight={(code) => highlight(code, languages.sql, 'sql')}
+                            padding={10}
+                            style={{
+                                fontFamily: '"Fira code", "Fira Mono", monospace',
+                                fontSize: 13,
+                                backgroundColor: '#f8f9fa',
+                                minHeight: '120px'
+                            }}
+                            textareaClassName="focus:outline-none"
+                        />
+                    </div>
                     {executionResult && (
                         <div className="bg-muted p-2 rounded-md text-xs font-mono overflow-auto max-h-32 border border-green-200 bg-green-50/50 dark:border-green-800 dark:bg-green-900/20">
                             <div className="font-semibold text-green-700 dark:text-green-400 mb-1">
