@@ -431,7 +431,7 @@ class ApiClient {
   }
 
   async getSampleQueryPrompts() {
-    return this.request<{ systemPrompt: string }>('/admin/sample-queries/prompts');
+    return this.request<{ systemPrompt: string; userPromptTemplate: string }>('/admin/sample-queries/prompts');
   }
 
   async bulkUpdateSampleQueries(ids: string[], action: 'DELETE' | 'ACTIVATE' | 'DEACTIVATE') {

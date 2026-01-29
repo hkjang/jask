@@ -274,7 +274,7 @@ Rules:
     }
   }
 
-  getSampleQueryPrompts(): { systemPrompt: string } {
+  getSampleQueryPrompts(): { systemPrompt: string; userPromptTemplate: string } {
     return {
       systemPrompt: `You are an expert Data Engineer and SQL Architect. Your goal is to generate {count} high-quality "Natural Language Question" and "SQL Query" pairs based on the given database schema.
 
@@ -291,7 +291,10 @@ Rules:
        "description": "최근 1개월 간 가입한 사용자 수 집계"
      }
    ]
-5. **Context**: Use the provided schema to infer meaningful business questions.`
+5. **Context**: Use the provided schema to infer meaningful business questions.`,
+      userPromptTemplate: `Based on the following database schema, generate {count} diverse and correct Question-SQL pairs:
+
+{schemaContext}`
     };
   }
 

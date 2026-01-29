@@ -681,7 +681,7 @@ export default function AdminSampleQueriesPage() {
 
 function GuideContent() {
   const [activeTab, setActiveTab] = useState<'guide' | 'prompt'>('guide');
-  const [promptInfo, setPromptInfo] = useState<{ systemPrompt: string } | null>(null);
+  const [promptInfo, setPromptInfo] = useState<{ systemPrompt: string; userPromptTemplate: string } | null>(null);
   const [isLoadingPrompt, setIsLoadingPrompt] = useState(false);
 
   const fetchPromptInfo = async () => {
@@ -771,9 +771,23 @@ function GuideContent() {
                         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                     </div>
                 ) : (
-                    <div className="bg-muted p-3 rounded-md overflow-x-auto max-h-[400px]">
+                    <div className="bg-muted p-3 rounded-md overflow-x-auto max-h-[250px] mb-4">
                         <pre className="text-xs font-mono whitespace-pre-wrap leading-relaxed">
-                            {promptInfo?.systemPrompt || '프롬프트 정보를 불러올 수 없습니다.'}
+                            {promptInfo?.systemPrompt || '시스템 프롬프트 정보를 불러올 수 없습니다.'}
+                        </pre>
+                    </div>
+                )}
+            </div>
+
+            <div>
+                <h4 className="font-semibold text-sm mb-2">사용자 프롬프트 템플릿 (User Prompt Template)</h4>
+                <p className="text-sm text-muted-foreground mb-3">
+                    스키마 컨텍스트와 함께 AI에게 전달되는 실제 요청 포맷입니다.
+                </p>
+                {!isLoadingPrompt && (
+                    <div className="bg-muted p-3 rounded-md overflow-x-auto max-h-[200px]">
+                         <pre className="text-xs font-mono whitespace-pre-wrap leading-relaxed">
+                            {promptInfo?.userPromptTemplate || '사용자 프롬프트 정보를 불러올 수 없습니다.'}
                         </pre>
                     </div>
                 )}
