@@ -693,7 +693,7 @@ export default function AdminSampleQueriesPage() {
                                     const res = await api.importSampleQueries(json);
                                     toast({ 
                                         title: '가져오기 완료', 
-                                        description: `성공: ${res.success}, 실패: ${res.failed}` 
+                                        description: `성공: ${res.success}, 건너뜀: ${res.skipped}, 실패: ${res.failed}` 
                                     });
                                     queryClient.invalidateQueries({ queryKey: ['sampleQueries'] });
                                 } catch (err) {

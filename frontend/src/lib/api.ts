@@ -443,7 +443,7 @@ class ApiClient {
   }
 
   async importSampleQueries(queries: any[]) {
-    return this.request<{ success: number; failed: number }>(
+    return this.request<{ success: number; failed: number; skipped: number }>(
       '/admin/sample-queries/import',
       { method: 'POST', body: queries }
     );

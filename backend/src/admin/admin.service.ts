@@ -622,6 +622,7 @@ export class AdminService {
   async importSampleQueries(queries: any[]) {
     let successCount = 0;
     let failCount = 0;
+    let skippedCount = 0;
 
     for (const q of queries) {
       try {
@@ -636,6 +637,19 @@ export class AdminService {
         if (!ds) {
             failCount++;
             continue; 
+        }
+
+        // Check for duplicates
+        const existing = await this.prisma.sampleQuery.findFirst({
+            where: {
+                dataSourceId: q.dataSourceId,
+                naturalQuery: q.naturalQuery
+            }
+        });
+        
+        if (existing) {
+            skippedCount++;
+            continue;
         }
 
         await this.prisma.sampleQuery.create({
@@ -653,7 +667,7 @@ export class AdminService {
       }
     }
 
-    return { success: successCount, failed: failCount };
+    return { success: successCount, failed: failCount, skipped: skippedCount };
   }
 
   async getSampleQueryPrompts() {
