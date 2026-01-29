@@ -40,6 +40,7 @@ import { CommentSection } from './_components/comment-section';
 import { FeedbackDialog } from './_components/feedback-dialog';
 import { TableSchemaViewer } from './_components/table-schema-viewer';
 import { SimulationDialog } from './_components/simulation-dialog';
+import { SampleQueryDialog } from './_components/sample-query-dialog';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -84,7 +85,8 @@ import {
   Star,
   MessageSquare, // Add this
   Share2, // Add this
-  Eye // Simulation icon
+  Eye, // Simulation icon
+  BookOpen // Sample Query Icon
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -111,6 +113,14 @@ interface Message {
   favorited?: boolean;
   favoriteId?: string;
   selectedTables?: string[];
+  selectedSampleQueries?: SampleQuery[];
+}
+
+interface SampleQuery {
+  id: string;
+  question: string;
+  score: number;
+  sql?: string;
 }
 
 
@@ -120,11 +130,48 @@ const CHART_COLORS = ['hsl(210, 70%, 50%)', 'hsl(240, 70%, 50%)', 'hsl(270, 70%,
 // Helper to extract tables from markdown content for history
 const extractTablesFromContent = (content: string): string[] => {
   if (!content) return [];
-  const match = content.match(/\*\*참조 테이블\*\*:\s*(.*?)(\n|$)/);
+  // Match "**참조 테이블**: ... " until newline
+  const match = content.match(/\*\*참조 테이블\*\*:\s*([^\n\r]*)(\r?\n|$)/);
   if (!match) return [];
   const links = match[1];
   const tableMatches = [...links.matchAll(/\[(.*?)\]\(table:.*?\)/g)];
   return tableMatches.map(m => m[1]);
+};
+
+// Helper to extract sample queries from markdown content for history
+const extractSampleQueriesFromContent = (content: string): SampleQuery[] => {
+  if (!content) return [];
+  // Match "**참조 샘플 쿼리**:" block
+  const blockMatch = content.match(/\*\*참조 샘플 쿼리\*\*:\s*\r?\n([\s\S]*?)(\r?\n\r?\n|$)/);
+  if (!blockMatch) return [];
+  
+  const lines = blockMatch[1].split(/\r?\n/);
+  const queries: SampleQuery[] = [];
+  
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    // Format: - [Question](sample:ID) (유사도: 85%)
+    // Relaxed regex to handle spacing and optional parenthesis escaping
+    const match = line.match(/- \[(.*?)\]\(sample:(.*?)\)\s*\(유사도:\s*(.*?)%\)/);
+    if (match) {
+      queries.push({
+        question: match[1],
+        id: match[2],
+        score: parseFloat(match[3]) / 100
+      });
+    }
+  }
+  return queries;
+};
+
+const removeSampleQueriesFromContent = (content: string): string => {
+  if (!content) return '';
+  return content.replace(/\*\*참조 샘플 쿼리\*\*:\s*\r?\n([\s\S]*?)(\r?\n\r?\n|$)/, '');
+};
+
+const removeReferencedTablesFromContent = (content: string): string => {
+  if (!content) return '';
+  return content.replace(/\*\*참조 테이블\*\*:\s*([^\n\r]*)(\r?\n|$)/, '');
 };
 
 const ChartView = ({ rows }: { rows: any[] }) => {
@@ -267,6 +314,15 @@ function QueryPageContent() {
   // Simulation Dialog State
   const [simulationInfo, setSimulationInfo] = useState<{ question: string } | null>(null);
 
+  // Sample Query Dialog State
+  const [selectedSampleQueryId, setSelectedSampleQueryId] = useState<string | null>(null);
+  const [isSampleQueryDialogOpen, setIsSampleQueryDialogOpen] = useState(false);
+
+  const handleSampleQueryClick = (id: string) => {
+      setSelectedSampleQueryId(id);
+      setIsSampleQueryDialogOpen(true);
+  };
+
   // Destructive SQL Confirmation State
   const [pendingDestructiveExec, setPendingDestructiveExec] = useState<{
     queryId: string;
@@ -403,6 +459,14 @@ function QueryPageContent() {
     staleTime: 1000 * 60 * 60, // Cache for 1 hour
     retry: false,
   });
+
+  // Auto-focus input on mount
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      inputRef.current?.focus();
+    }, 100);
+    return () => clearTimeout(timer);
+  }, []);
 
   // Force regenerate AI recommendations
   const [isForceRegenerating, setIsForceRegenerating] = useState(false);
@@ -666,6 +730,12 @@ function QueryPageContent() {
            setMessages((prev) => prev.map(msg => 
               msg.id === assistantMessage.id 
                 ? { ...msg, selectedTables: chunk.tables } 
+                : msg
+            ));
+        } else if (chunk.type === 'sample_queries_found') {
+           setMessages((prev) => prev.map(msg => 
+              msg.id === assistantMessage.id 
+                ? { ...msg, selectedSampleQueries: chunk.samples } 
                 : msg
             ));
         } else if (chunk.type === 'content_chunk') {
@@ -968,25 +1038,53 @@ function QueryPageContent() {
                     {/* Selected Tables Context */}
                     {/* Selected Tables Context */}
                     {(() => {
-                      // Combine live state and persisted history
                       const displayTables = (message.selectedTables && message.selectedTables.length > 0)
                         ? message.selectedTables 
                         : extractTablesFromContent(message.content);
 
-                      if (displayTables && displayTables.length > 0) {
+                      const displaySampleQueries = (message.selectedSampleQueries && message.selectedSampleQueries.length > 0)
+                        ? message.selectedSampleQueries
+                        : extractSampleQueriesFromContent(message.content);
+
+                      if ((displayTables && displayTables.length > 0) || (displaySampleQueries && displaySampleQueries.length > 0)) {
                         return (
-                          <div className="flex flex-wrap gap-1 mb-2 px-1">
-                            <span className="text-xs text-muted-foreground self-center mr-1">참조 테이블:</span>
-                            {displayTables.map(t => (
-                               <Badge 
-                                 variant="secondary" 
-                                 className="text-[10px] h-5 px-1.5 font-mono cursor-pointer hover:bg-muted-foreground/20 transition-colors" 
-                                 key={t}
-                                 onClick={() => handleTableClick(t)}
-                               >
-                                 {t}
-                               </Badge>
-                            ))}
+                          <div className="flex flex-col gap-2 mb-3">
+                              {displayTables && displayTables.length > 0 && (
+                                <div className="flex flex-wrap gap-1 px-1">
+                                    <span className="text-xs text-muted-foreground self-center mr-1">참조 테이블:</span>
+                                    {displayTables.map(t => (
+                                    <Badge 
+                                        variant="secondary" 
+                                        className="text-[10px] h-5 px-1.5 font-mono cursor-pointer hover:bg-muted-foreground/20 transition-colors" 
+                                        key={t}
+                                        onClick={() => handleTableClick(t)}
+                                    >
+                                        {t}
+                                    </Badge>
+                                    ))}
+                                </div>
+                              )}
+                              
+                              {displaySampleQueries && displaySampleQueries.length > 0 && (
+                                  <div className="flex flex-wrap gap-1 px-1">
+                                    <span className="text-xs text-muted-foreground self-center mr-1 flex items-center gap-1">
+                                        <BookOpen className="h-3 w-3" />
+                                        참조 샘플:
+                                    </span>
+                                    {displaySampleQueries.map(q => (
+                                    <Badge 
+                                        variant="outline" 
+                                        className="text-[10px] h-5 px-2 cursor-pointer hover:bg-muted transition-colors gap-1 max-w-[300px] truncate" 
+                                        key={q.id}
+                                        onClick={() => handleSampleQueryClick(q.id)}
+                                        title={q.question}
+                                    >
+                                        <span className="truncate">{q.question}</span>
+                                        <span className="text-muted-foreground opacity-70 text-[9px]">{(q.score * 100).toFixed(0)}%</span>
+                                    </Badge>
+                                    ))}
+                                </div>
+                              )}
                           </div>
                         );
                       }
@@ -1108,7 +1206,7 @@ function QueryPageContent() {
                                 },
                               }}
                             >
-                              {message.content}
+                              {removeReferencedTablesFromContent(removeSampleQueriesFromContent(message.content))}
                             </ReactMarkdown>
                             {message.meta?.tokens && (
                               <div className="mt-2 pt-2 border-t text-xs text-muted-foreground flex gap-3">
@@ -1908,6 +2006,15 @@ function QueryPageContent() {
         dataSourceId={selectedDataSource}
         question={simulationInfo?.question || ''}
       />
+      
+      <SampleQueryDialog 
+           open={isSampleQueryDialogOpen} 
+           onOpenChange={setIsSampleQueryDialogOpen} 
+           id={selectedSampleQueryId}
+           onUseQuery={(sql) => {
+               setIsSampleQueryDialogOpen(false);
+           }} 
+        />
     </MainLayout>
     </TooltipProvider>
   );
