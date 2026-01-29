@@ -417,50 +417,8 @@ export default function AdminSampleQueriesPage() {
             </Dialog>
 
             <Dialog open={isGuideOpen} onOpenChange={setIsGuideOpen}>
-                <DialogContent className="sm:max-w-[500px]">
-                    <DialogHeader>
-                        <DialogTitle className="flex items-center gap-2">
-                            <Sparkles className="h-5 w-5 text-yellow-500" />
-                            AI 생성 가이드
-                        </DialogTitle>
-                        <DialogDescription>
-                            AI가 샘플 쿼리를 생성하는 과정입니다.
-                        </DialogDescription>
-                    </DialogHeader>
-                    <div className="space-y-6 py-4">
-                        <div className="flex gap-4">
-                            <div className="flex-none flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 text-primary font-bold text-sm">1</div>
-                            <div>
-                                <h4 className="font-semibold text-sm">데이터소스 선택</h4>
-                                <p className="text-sm text-muted-foreground mt-1">
-                                    분석할 데이터베이스를 선택합니다. AI가 선택된 DB의 테이블 구조와 컬럼 정보를 읽어옵니다.
-                                </p>
-                            </div>
-                        </div>
-                        <div className="flex gap-4">
-                            <div className="flex-none flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 text-primary font-bold text-sm">2</div>
-                            <div>
-                                <h4 className="font-semibold text-sm">스키마 분석 및 생성</h4>
-                                <p className="text-sm text-muted-foreground mt-1">
-                                    선택한 데이터베이스의 테이블, 컬럼, 외래 키 관계를 <strong>심층 분석</strong>합니다. 
-                                    이를 기반으로 단순 조회뿐만 아니라 조인(JOIN), 집계(Aggregation) 등이 포함된 
-                                    <strong>실무 수준의 비즈니스 질의</strong>와 정확한 SQL 쿼리 쌍을 자동으로 생성합니다.
-                                </p>
-                            </div>
-                        </div>
-                        <div className="flex gap-4">
-                            <div className="flex-none flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 text-primary font-bold text-sm">3</div>
-                            <div>
-                                <h4 className="font-semibold text-sm">검토 및 저장</h4>
-                                <p className="text-sm text-muted-foreground mt-1">
-                                    생성된 목록에서 원하는 항목을 선택하여 저장합니다. 저장된 쿼리는 나중에 NL2SQL의 학습 예제로 활용됩니다.
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-                    <DialogFooter>
-                        <Button onClick={() => setIsGuideOpen(false)}>확인</Button>
-                    </DialogFooter>
+                <DialogContent className="sm:max-w-[600px] max-h-[85vh] overflow-y-auto">
+                    <GuideContent />
                 </DialogContent>
             </Dialog>
 
@@ -718,5 +676,116 @@ export default function AdminSampleQueriesPage() {
         )}
       </div>
     </MainLayout>
+  );
+}
+
+function GuideContent() {
+  const [activeTab, setActiveTab] = useState<'guide' | 'prompt'>('guide');
+  const [promptInfo, setPromptInfo] = useState<{ systemPrompt: string } | null>(null);
+  const [isLoadingPrompt, setIsLoadingPrompt] = useState(false);
+
+  const fetchPromptInfo = async () => {
+    if (promptInfo) return;
+    setIsLoadingPrompt(true);
+    try {
+      const res = await api.getSampleQueryPrompts();
+      setPromptInfo(res);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsLoadingPrompt(false);
+    }
+  };
+
+  return (
+    <>
+      <DialogHeader>
+        <DialogTitle className="flex items-center gap-2">
+            <Sparkles className="h-5 w-5 text-yellow-500" />
+            AI 생성 가이드
+        </DialogTitle>
+        <DialogDescription>
+            AI가 샘플 쿼리를 생성하는 과정과 원리에 대해 설명합니다.
+        </DialogDescription>
+      </DialogHeader>
+
+      <div className="flex border-b mb-4 mt-2">
+        <button
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === 'guide' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+          onClick={() => setActiveTab('guide')}
+        >
+          가이드
+        </button>
+        <button
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === 'prompt' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+          onClick={() => {
+            setActiveTab('prompt');
+            fetchPromptInfo();
+          }}
+        >
+          프롬프트 정보
+        </button>
+      </div>
+
+      {activeTab === 'guide' ? (
+        <div className="space-y-6 py-2">
+            <div className="flex gap-4">
+                <div className="flex-none flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 text-primary font-bold text-sm">1</div>
+                <div>
+                    <h4 className="font-semibold text-sm">데이터소스 선택</h4>
+                    <p className="text-sm text-muted-foreground mt-1">
+                        분석할 데이터베이스를 선택합니다. AI가 선택된 DB의 테이블 구조와 컬럼 정보를 읽어옵니다.
+                    </p>
+                </div>
+            </div>
+            <div className="flex gap-4">
+                <div className="flex-none flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 text-primary font-bold text-sm">2</div>
+                <div>
+                    <h4 className="font-semibold text-sm">스키마 분석 및 생성</h4>
+                    <p className="text-sm text-muted-foreground mt-1">
+                        선택한 데이터베이스의 테이블, 컬럼, 외래 키 관계를 <strong>심층 분석</strong>합니다. 
+                        이를 기반으로 단순 조회뿐만 아니라 조인(JOIN), 집계(Aggregation) 등이 포함된 
+                        <strong>실무 수준의 비즈니스 질의</strong>와 정확한 SQL 쿼리 쌍을 자동으로 생성합니다.
+                    </p>
+                </div>
+            </div>
+            <div className="flex gap-4">
+                <div className="flex-none flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 text-primary font-bold text-sm">3</div>
+                <div>
+                    <h4 className="font-semibold text-sm">검토 및 저장</h4>
+                    <p className="text-sm text-muted-foreground mt-1">
+                        생성된 목록에서 원하는 항목을 선택하여 저장합니다. 저장된 쿼리는 나중에 NL2SQL의 학습 예제로 활용됩니다.
+                    </p>
+                </div>
+            </div>
+        </div>
+      ) : (
+        <div className="space-y-4 py-2">
+            <div>
+                <h4 className="font-semibold text-sm mb-2">시스템 프롬프트 (System Prompt)</h4>
+                <p className="text-sm text-muted-foreground mb-3">
+                    샘플 쿼리 생성 시 AI에게 부여되는 페르소나와 지침입니다.
+                </p>
+                {isLoadingPrompt ? (
+                    <div className="flex items-center justify-center py-8">
+                        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                    </div>
+                ) : (
+                    <div className="bg-muted p-3 rounded-md overflow-x-auto max-h-[400px]">
+                        <pre className="text-xs font-mono whitespace-pre-wrap leading-relaxed">
+                            {promptInfo?.systemPrompt || '프롬프트 정보를 불러올 수 없습니다.'}
+                        </pre>
+                    </div>
+                )}
+            </div>
+        </div>
+      )}
+
+      <DialogFooter className="mt-4">
+          <DialogTrigger asChild>
+            {/* Close handled by parent dialog state, but trigger needed for accessible closing if button inside */}
+          </DialogTrigger>
+      </DialogFooter>
+    </>
   );
 }

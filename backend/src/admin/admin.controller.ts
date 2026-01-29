@@ -187,6 +187,12 @@ export class AdminController {
     return this.adminService.generateAISampleQueries(body.dataSourceId, body.count);
   }
 
+  @Get('sample-queries/prompts')
+  @ApiOperation({ summary: 'AI 샘플 쿼리 생성 프롬프트 정보 조회' })
+  getSampleQueryPrompts() {
+    return this.adminService.getSampleQueryPrompts();
+  }
+
   // 프롬프트 템플릿
   @Get('prompt-templates')
   @ApiOperation({ summary: '프롬프트 템플릿 목록' })

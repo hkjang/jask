@@ -274,8 +274,9 @@ Rules:
     }
   }
 
-  async generateSampleQueryPairs(schemaContext: string, count: number = 5): Promise<{ naturalQuery: string; sqlQuery: string; description: string }[]> {
-    const systemPrompt = `You are an expert Data Engineer and SQL Architect. Your goal is to generate ${count} high-quality "Natural Language Question" and "SQL Query" pairs based on the given database schema.
+  getSampleQueryPrompts(): { systemPrompt: string } {
+    return {
+      systemPrompt: `You are an expert Data Engineer and SQL Architect. Your goal is to generate {count} high-quality "Natural Language Question" and "SQL Query" pairs based on the given database schema.
 
 Rules:
 1. **Questions MUST be in Korean.**
@@ -290,11 +291,18 @@ Rules:
        "description": "최근 1개월 간 가입한 사용자 수 집계"
      }
    ]
-5. **Context**: Use the provided schema to infer meaningful business questions.`;
+5. **Context**: Use the provided schema to infer meaningful business questions.`
+    };
+  }
+
+  async generateSampleQueryPairs(schemaContext: string, count: number = 5): Promise<{ naturalQuery: string; sqlQuery: string; description: string }[]> {
+    const { systemPrompt } = this.getSampleQueryPrompts();
+    // Replace placeholder with actual count
+    const effectiveSystemPrompt = systemPrompt.replace('{count}', count.toString());
 
     const response = await this.generate({
       prompt: `Based on the following database schema, generate ${count} diverse and correct Question-SQL pairs:\n\n${schemaContext}`,
-      systemPrompt,
+      systemPrompt: effectiveSystemPrompt,
       temperature: 0.7,
       maxTokens: 3000,
     });

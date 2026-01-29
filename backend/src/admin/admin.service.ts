@@ -599,6 +599,10 @@ export class AdminService {
     };
   }
 
+  async getSampleQueryPrompts() {
+    return this.llmService.getSampleQueryPrompts();
+  }
+
   // 프롬프트 템플릿 관리
   async getPromptTemplates() {
     return this.prisma.promptTemplate.findMany({
