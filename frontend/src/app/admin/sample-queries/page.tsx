@@ -35,7 +35,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { api } from '@/lib/api';
 import { useToast } from '@/components/ui/use-toast';
-import { FileText, Plus, Edit2, Trash2, Search, Loader2, Sparkles } from 'lucide-react';
+import { FileText, Plus, Edit2, Trash2, Search, Loader2, Sparkles, HelpCircle } from 'lucide-react';
 import { useState } from 'react';
 import Editor from 'react-simple-code-editor';
 import { highlight, languages } from 'prismjs';
@@ -212,6 +212,7 @@ export default function AdminSampleQueriesPage() {
 
   // AI Generation State
   const [isAiDialogOpen, setIsAiDialogOpen] = useState(false);
+  const [isGuideOpen, setIsGuideOpen] = useState(false);
   const [aiDataSourceId, setAiDataSourceId] = useState<string>('');
   const [aiCount, setAiCount] = useState<number>(5);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -311,7 +312,12 @@ export default function AdminSampleQueriesPage() {
                 </DialogTrigger>
                 <DialogContent className="sm:max-w-[700px] max-h-[85vh] overflow-y-auto">
                     <DialogHeader>
-                        <DialogTitle>AI 샘플 쿼리 자동 생성</DialogTitle>
+                        <div className="flex items-center gap-2">
+                            <DialogTitle>AI 샘플 쿼리 자동 생성</DialogTitle>
+                            <Button variant="ghost" size="icon" onClick={() => setIsGuideOpen(true)} className="h-6 w-6 rounded-full hover:bg-muted">
+                                <HelpCircle className="h-4 w-4 text-muted-foreground" />
+                            </Button>
+                        </div>
                         <DialogDescription>
                             데이터베이스 스키마를 분석하여 유의미한 질의-SQL 쌍을 자동으로 생성합니다.
                         </DialogDescription>
@@ -407,6 +413,54 @@ export default function AdminSampleQueriesPage() {
                             </DialogFooter>
                         </div>
                     )}
+                </DialogContent>
+            </Dialog>
+
+            <Dialog open={isGuideOpen} onOpenChange={setIsGuideOpen}>
+                <DialogContent className="sm:max-w-[500px]">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2">
+                            <Sparkles className="h-5 w-5 text-yellow-500" />
+                            AI 생성 가이드
+                        </DialogTitle>
+                        <DialogDescription>
+                            AI가 샘플 쿼리를 생성하는 과정입니다.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-6 py-4">
+                        <div className="flex gap-4">
+                            <div className="flex-none flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 text-primary font-bold text-sm">1</div>
+                            <div>
+                                <h4 className="font-semibold text-sm">데이터소스 선택</h4>
+                                <p className="text-sm text-muted-foreground mt-1">
+                                    분석할 데이터베이스를 선택합니다. AI가 선택된 DB의 테이블 구조와 컬럼 정보를 읽어옵니다.
+                                </p>
+                            </div>
+                        </div>
+                        <div className="flex gap-4">
+                            <div className="flex-none flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 text-primary font-bold text-sm">2</div>
+                            <div>
+                                <h4 className="font-semibold text-sm">스키마 분석 및 생성</h4>
+                                <p className="text-sm text-muted-foreground mt-1">
+                                    선택한 데이터베이스의 테이블, 컬럼, 외래 키 관계를 <strong>심층 분석</strong>합니다. 
+                                    이를 기반으로 단순 조회뿐만 아니라 조인(JOIN), 집계(Aggregation) 등이 포함된 
+                                    <strong>실무 수준의 비즈니스 질의</strong>와 정확한 SQL 쿼리 쌍을 자동으로 생성합니다.
+                                </p>
+                            </div>
+                        </div>
+                        <div className="flex gap-4">
+                            <div className="flex-none flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 text-primary font-bold text-sm">3</div>
+                            <div>
+                                <h4 className="font-semibold text-sm">검토 및 저장</h4>
+                                <p className="text-sm text-muted-foreground mt-1">
+                                    생성된 목록에서 원하는 항목을 선택하여 저장합니다. 저장된 쿼리는 나중에 NL2SQL의 학습 예제로 활용됩니다.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <Button onClick={() => setIsGuideOpen(false)}>확인</Button>
+                    </DialogFooter>
                 </DialogContent>
             </Dialog>
 
