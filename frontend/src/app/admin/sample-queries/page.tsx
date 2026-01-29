@@ -249,7 +249,12 @@ export default function AdminSampleQueriesPage() {
                         <CardContent className="flex items-start justify-between p-6">
                             <div className="space-y-2 flex-1 min-w-0 pr-4">
                                 <div className="flex items-center gap-2">
-                                    <h3 className="font-semibold text-lg">{query.naturalQuery}</h3>
+                                    <h3 
+                                        className="font-semibold text-lg cursor-pointer hover:underline hover:text-primary transition-colors"
+                                        onClick={() => openEdit(query)}
+                                    >
+                                        {query.naturalQuery}
+                                    </h3>
                                     {query.category && (
                                         <span className="text-xs px-2 py-0.5 bg-muted rounded-full text-muted-foreground">
                                             {query.category}

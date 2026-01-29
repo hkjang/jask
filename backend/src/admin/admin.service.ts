@@ -373,6 +373,7 @@ export class AdminService {
     naturalQuery: string;
     sqlQuery: string;
     description?: string;
+    category?: string;
     tags?: string[];
   }) {
     // 1. Create Basic Record
@@ -392,6 +393,7 @@ export class AdminService {
             sql: data.sqlQuery,
             question: data.naturalQuery,
             description: data.description,
+            category: data.category,
             tags: data.tags
         }
       });
@@ -411,12 +413,22 @@ export class AdminService {
     naturalQuery: string;
     sqlQuery: string;
     description: string;
+    category: string;
     tags: string[];
     isVerified: boolean;
+    dataSourceId: string;
   }>) {
+    const { dataSourceId, ...rest } = data;
+    const updateData: any = { ...rest };
+    
+    // Explicitly handle dataSourceId if present
+    if (dataSourceId) {
+        updateData.dataSource = { connect: { id: dataSourceId } };
+    }
+
     const sample = await this.prisma.sampleQuery.update({
       where: { id },
-      data,
+      data: updateData,
     });
 
     // Sync Update to EmbeddableItem

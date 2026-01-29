@@ -302,6 +302,7 @@ model SampleQuery {
 
   naturalQuery String   @db.Text
   sqlQuery     String   @db.Text
+  category     String?
   description  String?  @db.Text
   tags         String[] @default([])
   isVerified   Boolean  @default(false)
