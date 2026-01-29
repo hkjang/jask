@@ -35,7 +35,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { api } from '@/lib/api';
 import { useToast } from '@/components/ui/use-toast';
-import { FileText, Plus, Edit2, Trash2, Search, Loader2 } from 'lucide-react';
+import { FileText, Plus, Edit2, Trash2, Search, Loader2, Sparkles } from 'lucide-react';
 import { useState } from 'react';
 
 interface SampleQuery {
@@ -131,6 +131,58 @@ export default function AdminSampleQueriesPage() {
     }
   };
 
+  // AI Generation State
+  const [isAiDialogOpen, setIsAiDialogOpen] = useState(false);
+  const [aiDataSourceId, setAiDataSourceId] = useState<string>('');
+  const [aiCount, setAiCount] = useState<number>(5);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [generatedQueries, setGeneratedQueries] = useState<any[]>([]);
+  const [selectedGeneratedIndices, setSelectedGeneratedIndices] = useState<Set<number>>(new Set());
+
+  const handleGenerateAI = async () => {
+    if (!aiDataSourceId) {
+        toast({ title: '데이터소스를 선택해주세요', variant: 'destructive' });
+        return;
+    }
+    setIsGenerating(true);
+    try {
+        const res = await api.generateAISampleQueries(aiDataSourceId, aiCount);
+        setGeneratedQueries(res.items);
+        setSelectedGeneratedIndices(new Set(res.items.map((_, i) => i))); // Select all by default
+    } catch (e) {
+        toast({ title: '생성 실패', description: 'AI 생성 중 오류가 발생했습니다.', variant: 'destructive' });
+    } finally {
+        setIsGenerating(false);
+    }
+  };
+
+  const handleSaveGenerated = async () => {
+    const selected = generatedQueries.filter((_, i) => selectedGeneratedIndices.has(i));
+    if (selected.length === 0) return;
+
+    let successCount = 0;
+    try {
+        const promises = selected.map(q => 
+            api.createSampleQuery({
+                dataSourceId: aiDataSourceId,
+                naturalQuery: q.naturalQuery,
+                sqlQuery: q.sqlQuery,
+                description: q.description,
+                category: 'AI Generated'
+            }).then(() => successCount++)
+        );
+        await Promise.all(promises);
+        
+        toast({ title: `${successCount}개의 쿼리가 저장되었습니다` });
+        setGeneratedQueries([]);
+        setIsAiDialogOpen(false);
+        queryClient.invalidateQueries({ queryKey: ['sampleQueries'] });
+    } catch (e) {
+        toast({ title: '저장 실패', variant: 'destructive' });
+    }
+  };
+
+
   return (
     <MainLayout>
       <div className="w-full px-6 py-8">
@@ -155,6 +207,120 @@ export default function AdminSampleQueriesPage() {
                 ))}
               </SelectContent>
             </Select>
+
+            <Dialog open={isAiDialogOpen} onOpenChange={(open) => {
+                setIsAiDialogOpen(open);
+                if (!open) {
+                    setGeneratedQueries([]);
+                    setIsGenerating(false);
+                }
+            }}>
+                <DialogTrigger asChild>
+                    <Button variant="outline" className="gap-2">
+                        <Sparkles className="h-4 w-4 text-yellow-500" />
+                        AI 생성
+                    </Button>
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-[700px] max-h-[85vh] overflow-y-auto">
+                    <DialogHeader>
+                        <DialogTitle>AI 샘플 쿼리 자동 생성</DialogTitle>
+                        <DialogDescription>
+                            데이터베이스 스키마를 분석하여 유의미한 질의-SQL 쌍을 자동으로 생성합니다.
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    {!generatedQueries.length ? (
+                        <div className="space-y-4 py-4">
+                            <div className="space-y-2">
+                                <label className="text-sm font-medium">데이터소스</label>
+                                <Select value={aiDataSourceId} onValueChange={setAiDataSourceId}>
+                                    <SelectTrigger>
+                                        <SelectValue placeholder="선택하세요" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {dataSources.map((ds: DataSource) => (
+                                            <SelectItem key={ds.id} value={ds.id}>{ds.name}</SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            <div className="space-y-2">
+                                <label className="text-sm font-medium">생성 개수 ({aiCount}개)</label>
+                                <Input 
+                                    type="range" 
+                                    min="1" 
+                                    max="10" 
+                                    value={aiCount} 
+                                    onChange={(e) => setAiCount(parseInt(e.target.value))} 
+                                    className="cursor-pointer"
+                                />
+                            </div>
+                             <div className="pt-4 flex justify-end">
+                                <Button onClick={handleGenerateAI} disabled={isGenerating || !aiDataSourceId}>
+                                    {isGenerating ? (
+                                        <>
+                                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                            분석 및 생성 중...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Sparkles className="h-4 w-4 mr-2" />
+                                            생성 시작
+                                        </>
+                                    )}
+                                </Button>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="space-y-4">
+                            <div className="flex justify-between items-center mb-2">
+                                <span className="text-sm text-muted-foreground">{generatedQueries.length}개 생성됨</span>
+                                <Button variant="ghost" size="sm" onClick={() => setGeneratedQueries([])}>다시 생성</Button>
+                            </div>
+                            <div className="space-y-3 max-h-[50vh] overflow-y-auto pr-2">
+                                {generatedQueries.map((q, i) => (
+                                    <Card key={i} className={`border cursor-pointer transition-colors ${selectedGeneratedIndices.has(i) ? 'border-primary bg-primary/5' : ''}`}
+                                        onClick={() => {
+                                            const next = new Set(selectedGeneratedIndices);
+                                            if (next.has(i)) next.delete(i);
+                                            else next.add(i);
+                                            setSelectedGeneratedIndices(next);
+                                        }}
+                                    >
+                                        <CardContent className="p-3">
+                                            <div className="flex gap-3">
+                                                <div className="mt-1">
+                                                    <input type="checkbox" checked={selectedGeneratedIndices.has(i)} readOnly className="accent-primary h-4 w-4" />
+                                                </div>
+                                                <div className="space-y-1 flex-1">
+                                                    <p className="font-medium text-sm">{q.naturalQuery}</p>
+                                                    <code className="block text-xs bg-muted p-1.5 rounded font-mono text-muted-foreground break-all">
+                                                        {q.sqlQuery}
+                                                    </code>
+                                                    {q.description && <p className="text-xs text-muted-foreground">{q.description}</p>}
+                                                </div>
+                                            </div>
+                                        </CardContent>
+                                    </Card>
+                                ))}
+                            </div>
+                            <DialogFooter>
+                                <div className="flex justify-between w-full items-center">
+                                    <span className="text-sm text-muted-foreground">
+                                        {selectedGeneratedIndices.size}개 선택됨
+                                    </span>
+                                    <div className="flex gap-2">
+                                        <Button variant="outline" onClick={() => setIsAiDialogOpen(false)}>취소</Button>
+                                        <Button onClick={handleSaveGenerated} disabled={selectedGeneratedIndices.size === 0}>
+                                            선택 항목 저장
+                                        </Button>
+                                    </div>
+                                </div>
+                            </DialogFooter>
+                        </div>
+                    )}
+                </DialogContent>
+            </Dialog>
 
             <Dialog open={isDialogOpen} onOpenChange={(open) => {
               setIsDialogOpen(open);

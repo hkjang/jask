@@ -494,6 +494,37 @@ export class AdminService {
     return this.prisma.sampleQuery.delete({ where: { id } });
   }
 
+  async generateAISampleQueries(dataSourceId: string, count: number = 5) {
+    // 1. Fetch Schema Context
+    const tables = await this.prisma.tableMetadata.findMany({
+      where: { dataSourceId, isExcluded: false },
+      include: {
+        columns: {
+          where: { isExcluded: false },
+          select: { columnName: true, dataType: true, description: true },
+        },
+      },
+      take: 20, // Limit context size
+    });
+
+    if (tables.length === 0) {
+      throw new Error('No tables found for this datasource to generate queries.');
+    }
+
+    const schemaContext = tables.map(t => {
+      const cols = t.columns.map(c => `${c.columnName} (${c.dataType})${c.description ? `: ${c.description}` : ''}`).join(', ');
+      return `Table: ${t.schemaName}.${t.tableName}${t.description ? ` - ${t.description}` : ''}\nColumns: ${cols}`;
+    }).join('\n\n');
+
+    // 2. Generate Pairs
+    const pairs = await this.llmService.generateSampleQueryPairs(schemaContext, count);
+    
+    return {
+        generated: pairs.length,
+        items: pairs
+    };
+  }
+
   // 프롬프트 템플릿 관리
   async getPromptTemplates() {
     return this.prisma.promptTemplate.findMany({

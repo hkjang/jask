@@ -274,6 +274,47 @@ Rules:
     }
   }
 
+  async generateSampleQueryPairs(schemaContext: string, count: number = 5): Promise<{ naturalQuery: string; sqlQuery: string; description: string }[]> {
+    const systemPrompt = `You are an expert Data Engineer and SQL Architect. Your goal is to generate ${count} high-quality "Natural Language Question" and "SQL Query" pairs based on the given database schema.
+
+Rules:
+1. **Questions MUST be in Korean.**
+2. **SQL MUST be syntactically correct** for the given schema. Use proper table/column names from the schema.
+3. **Variety**: Generate a mix of simple (filtering), medium (aggregation), and complex (JOINs, subqueries) queries.
+4. **Format**: Return ONLY a valid JSON array of objects. No markdown, no explanations outside the JSON.
+   Example format:
+   [
+     {
+       "naturalQuery": "지난 달 가입한 사용자 수는?",
+       "sqlQuery": "SELECT COUNT(*) FROM users WHERE created_at >= NOW() - INTERVAL '1 month'",
+       "description": "최근 1개월 간 가입한 사용자 수 집계"
+     }
+   ]
+5. **Context**: Use the provided schema to infer meaningful business questions.`;
+
+    const response = await this.generate({
+      prompt: `Based on the following database schema, generate ${count} diverse and correct Question-SQL pairs:\n\n${schemaContext}`,
+      systemPrompt,
+      temperature: 0.7,
+      maxTokens: 3000,
+    });
+
+    try {
+      const content = response.content;
+      const jsonMatch = content.match(/\[[\s\S]*\]/);
+      const jsonStr = jsonMatch ? jsonMatch[0] : content;
+      
+      const parsed = JSON.parse(jsonStr);
+      if (Array.isArray(parsed)) {
+        return parsed;
+      }
+      return [];
+    } catch (e) {
+      this.logger.error(`Failed to parse generated sample queries: ${e.message}`);
+      return [];
+    }
+  }
+
   async generateChat(messages: { role: string; content: string }[], providerId?: string): Promise<LLMStreamChunk[]> {
     // 1. Construct prompt from messages
     let prompt = '';

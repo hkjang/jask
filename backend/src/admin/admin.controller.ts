@@ -163,6 +163,12 @@ export class AdminController {
     return this.adminService.deleteSampleQuery(id);
   }
 
+  @Post('sample-queries/generate')
+  @ApiOperation({ summary: 'AI로 샘플 쿼리 생성 (저장 안함)' })
+  generateAISampleQueries(@Body() body: { dataSourceId: string; count?: number }) {
+    return this.adminService.generateAISampleQueries(body.dataSourceId, body.count);
+  }
+
   // 프롬프트 템플릿
   @Get('prompt-templates')
   @ApiOperation({ summary: '프롬프트 템플릿 목록' })

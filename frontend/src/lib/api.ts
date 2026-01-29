@@ -419,6 +419,13 @@ class ApiClient {
     return this.request(`/admin/sample-queries/${id}`, { method: 'DELETE' });
   }
 
+  async generateAISampleQueries(dataSourceId: string, count: number = 5) {
+    return this.request<{ generated: number; items: any[] }>(
+      '/admin/sample-queries/generate', 
+      { method: 'POST', body: { dataSourceId, count } }
+    );
+  }
+
   async updateSampleQuery(id: string, data: any) {
     return this.request(`/admin/sample-queries/${id}`, { method: 'PUT', body: data });
   }
