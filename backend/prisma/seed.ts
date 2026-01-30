@@ -73,6 +73,12 @@ async function main() {
     { key: 'max_limit', value: 1000, description: '최대 쿼리 결과 제한' },
     { key: 'query_timeout', value: 30000, description: '쿼리 타임아웃 (ms)' },
     { key: 'enable_sql_validation', value: true, description: 'SQL 검증 활성화' },
+    // LLM 파라미터 설정
+    { key: 'llm_max_tokens_default', value: 2048, description: 'LLM 기본 최대 토큰 수' },
+    { key: 'llm_max_tokens_sql', value: 2048, description: 'SQL 생성/수정 시 최대 토큰 수' },
+    { key: 'llm_max_tokens_translation', value: 4000, description: '메타데이터 번역 시 최대 토큰 수' },
+    { key: 'llm_translation_batch_size', value: 50, description: '번역 시 배치당 컬럼 수' },
+    { key: 'llm_tokens_per_column', value: 80, description: '컬럼당 예상 토큰 수 (동적 토큰 계산용)' },
   ];
 
   for (const setting of settings) {
