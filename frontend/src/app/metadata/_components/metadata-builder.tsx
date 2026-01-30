@@ -10,8 +10,15 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import {
   Layout, Save, Info, Plus, Columns, Network, Tag,
-  Trash2, SlidersHorizontal, AlertCircle, Table as TableIcon, Eye, EyeOff, Code, ListTree
+  Trash2, SlidersHorizontal, AlertCircle, Table as TableIcon, Eye, EyeOff, Code, ListTree, FileCode, Copy, Check
 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useState, useEffect } from "react";
 import { api } from "@/lib/api";
 import { useToast } from "@/components/ui/use-toast";
@@ -162,9 +169,42 @@ export function MetadataBuilder({ table, onUpdate }: MetadataBuilderProps) {
   const [codeManagerOpen, setCodeManagerOpen] = useState(false);
   const [activeColumnForCodes, setActiveColumnForCodes] = useState<{id: string, name: string} | null>(null);
 
+  // 스키마 컨텍스트 미리보기 상태
+  const [schemaContextOpen, setSchemaContextOpen] = useState(false);
+  const [schemaContext, setSchemaContext] = useState<{ context: string; metadata: any } | null>(null);
+  const [isLoadingSchema, setIsLoadingSchema] = useState(false);
+  const [copied, setCopied] = useState(false);
+
   const openCodeManager = (col: any) => {
       setActiveColumnForCodes({ id: col.id, name: col.columnName });
       setCodeManagerOpen(true);
+  };
+
+  const handleShowSchemaContext = async () => {
+    if (!table?.id) return;
+    setIsLoadingSchema(true);
+    setSchemaContextOpen(true);
+    try {
+      const data = await api.getTableSchemaContext(table.id);
+      setSchemaContext(data);
+    } catch (e: any) {
+      toast({ title: "오류", description: "스키마 컨텍스트 조회 실패", variant: "destructive" });
+      setSchemaContextOpen(false);
+    } finally {
+      setIsLoadingSchema(false);
+    }
+  };
+
+  const handleCopyContext = async () => {
+    if (!schemaContext?.context) return;
+    try {
+      await navigator.clipboard.writeText(schemaContext.context);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+      toast({ title: "복사 완료", description: "스키마 컨텍스트가 클립보드에 복사되었습니다." });
+    } catch {
+      toast({ title: "오류", description: "복사 실패", variant: "destructive" });
+    }
   };
 
   if (!table) return (
@@ -205,7 +245,7 @@ export function MetadataBuilder({ table, onUpdate }: MetadataBuilderProps) {
           }}>
             점수 새로고침
           </Button>
-          <Button size="sm" variant="outline"><Info className="h-4 w-4 mr-1"/> 스키마</Button>
+          <Button size="sm" variant="outline" onClick={handleShowSchemaContext}><FileCode className="h-4 w-4 mr-1"/> AI 스키마</Button>
           {(activeTab === 'general') && (
             <Button size="sm" onClick={handleSaveTable}><Save className="h-4 w-4 mr-1" /> 일반 저장</Button>
           )}
@@ -475,13 +515,117 @@ export function MetadataBuilder({ table, onUpdate }: MetadataBuilderProps) {
     </div>
 
     {activeColumnForCodes && (
-        <CodeValueManager 
+        <CodeValueManager
             isOpen={codeManagerOpen}
             onClose={() => setCodeManagerOpen(false)}
             columnId={activeColumnForCodes.id}
             columnName={activeColumnForCodes.name}
         />
     )}
+
+    {/* AI 스키마 컨텍스트 미리보기 다이얼로그 */}
+    <Dialog open={schemaContextOpen} onOpenChange={setSchemaContextOpen}>
+      <DialogContent className="max-w-4xl max-h-[85vh] flex flex-col">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <FileCode className="h-5 w-5 text-primary" />
+            AI 스키마 컨텍스트 미리보기
+          </DialogTitle>
+          <DialogDescription>
+            NL2SQL 쿼리 생성 시 LLM에 전달되는 테이블 스키마 정보입니다.
+          </DialogDescription>
+        </DialogHeader>
+
+        {isLoadingSchema ? (
+          <div className="flex-1 flex items-center justify-center py-12">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+            <span className="ml-3 text-muted-foreground">스키마 컨텍스트 로딩 중...</span>
+          </div>
+        ) : schemaContext ? (
+          <div className="flex-1 overflow-hidden flex flex-col gap-4 min-h-0">
+            {/* 메타데이터 요약 */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="bg-muted/50 rounded-lg p-3">
+                <div className="text-xs text-muted-foreground">컬럼 포함</div>
+                <div className="text-lg font-semibold text-green-600">
+                  {schemaContext.metadata.columnStats.included}
+                  <span className="text-sm font-normal text-muted-foreground">
+                    /{schemaContext.metadata.columnStats.total}
+                  </span>
+                </div>
+              </div>
+              <div className="bg-muted/50 rounded-lg p-3">
+                <div className="text-xs text-muted-foreground">의미적 이름</div>
+                <div className="text-lg font-semibold text-blue-600">
+                  {schemaContext.metadata.columnStats.withSemanticName}
+                  <span className="text-sm font-normal text-muted-foreground">
+                    /{schemaContext.metadata.columnStats.total}
+                  </span>
+                </div>
+              </div>
+              <div className="bg-muted/50 rounded-lg p-3">
+                <div className="text-xs text-muted-foreground">관계 정보</div>
+                <div className="text-lg font-semibold text-purple-600">
+                  {schemaContext.metadata.relationshipCount + schemaContext.metadata.fkCount}
+                </div>
+              </div>
+              <div className="bg-muted/50 rounded-lg p-3">
+                <div className="text-xs text-muted-foreground">예상 토큰</div>
+                <div className="text-lg font-semibold text-orange-600">
+                  ~{schemaContext.metadata.estimatedTokens.toLocaleString()}
+                </div>
+              </div>
+            </div>
+
+            {/* 상태 배지 */}
+            <div className="flex gap-2 flex-wrap">
+              {schemaContext.metadata.isExcluded && (
+                <Badge variant="destructive">AI 컨텍스트에서 제외됨</Badge>
+              )}
+              {schemaContext.metadata.isSyncedWithAI && (
+                <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">AI 동기화됨</Badge>
+              )}
+              <Badge variant="outline">
+                완성도: {schemaContext.metadata.completenessScore || 0}%
+              </Badge>
+              <Badge variant="outline">
+                상태: {schemaContext.metadata.metadataStatus}
+              </Badge>
+              <Badge variant="outline">
+                중요도: {schemaContext.metadata.importanceLevel}
+              </Badge>
+            </div>
+
+            {/* 컨텍스트 내용 */}
+            <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-sm font-medium">스키마 컨텍스트 (LLM에 전달됨)</span>
+                <Button size="sm" variant="outline" onClick={handleCopyContext}>
+                  {copied ? <Check className="h-4 w-4 mr-1 text-green-500" /> : <Copy className="h-4 w-4 mr-1" />}
+                  {copied ? '복사됨' : '복사'}
+                </Button>
+              </div>
+              <div className="flex-1 min-h-0 overflow-auto">
+                <pre className="text-xs bg-slate-900 text-slate-100 p-4 rounded-md whitespace-pre-wrap font-mono leading-relaxed">
+                  {schemaContext.context}
+                </pre>
+              </div>
+            </div>
+
+            {/* 경고 메시지 */}
+            {schemaContext.metadata.columnStats.excluded > 0 && (
+              <div className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-md text-sm text-amber-800">
+                <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                <div>
+                  <span className="font-medium">{schemaContext.metadata.columnStats.excluded}개 컬럼이 제외됨:</span>{' '}
+                  민감도가 '엄격'이거나 명시적으로 제외된 컬럼은 AI 컨텍스트에 포함되지 않습니다.
+                </div>
+              </div>
+            )}
+          </div>
+        ) : null}
+      </DialogContent>
+    </Dialog>
     </>
   );
 }

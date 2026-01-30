@@ -1421,6 +1421,126 @@ export class MetadataService {
     });
   }
 
+  /**
+   * 단일 테이블의 AI 스키마 컨텍스트 조회
+   * NL2SQL 시 LLM에 전달되는 형태와 동일한 포맷으로 반환
+   */
+  async getTableSchemaContext(tableId: string): Promise<{ context: string; metadata: any }> {
+    const table = await this.prisma.tableMetadata.findUnique({
+      where: { id: tableId },
+      include: {
+        columns: {
+          include: {
+            codeValueList: {
+              where: { isActive: true },
+              orderBy: { displayOrder: 'asc' }
+            }
+          }
+        },
+        relationshipsFrom: { include: { targetTable: true } },
+        relationshipsTo: { include: { sourceTable: true } }
+      }
+    });
+
+    if (!table) {
+      throw new Error('테이블을 찾을 수 없습니다.');
+    }
+
+    // Build context in the same format as getSchemaContext
+    let context = '';
+
+    // Display table/view type
+    const objectType = table.tableType === 'VIEW' ? 'View' :
+                       table.tableType === 'MATERIALIZED_VIEW' ? 'Materialized View' : 'Table';
+    context += `${objectType}: ${table.schemaName}.${table.tableName}`;
+    if (table.tableType === 'VIEW') context += ' [VIEW]';
+    if (table.description) context += ` -- ${table.description}`;
+    if (table.tags && table.tags.length > 0) context += ` (Tags: ${table.tags.join(', ')})`;
+    context += '\n';
+
+    // Include view definition for better SQL generation context
+    if (table.tableType === 'VIEW' && table.viewDefinition) {
+      const truncatedDef = table.viewDefinition.length > 500
+        ? table.viewDefinition.substring(0, 500) + '...'
+        : table.viewDefinition;
+      context += `  View Definition: ${truncatedDef}\n`;
+    }
+
+    // Relations
+    const relations = [
+      ...table.relationshipsFrom.map(r => `Logical Relation: -> ${r.targetTable.tableName} (${r.description || r.relationType})`),
+      ...table.relationshipsTo.map(r => `Logical Relation: <- ${r.sourceTable.tableName} (${r.description || r.relationType})`)
+    ];
+    if (relations.length > 0) {
+      context += `Relationships:\n${relations.map(r => `  ${r}`).join('\n')}\n`;
+    }
+
+    // FK Relations from columns
+    const fkColumns = table.columns.filter(c => c.isForeignKey && c.referencedTable);
+    if (fkColumns.length > 0) {
+      context += `Physical FK Relations:\n`;
+      for (const col of fkColumns) {
+        context += `  ${col.columnName} -> ${col.referencedTable}.${col.referencedColumn}\n`;
+      }
+    }
+
+    context += 'Columns:\n';
+    let includedCount = 0;
+    let excludedCount = 0;
+
+    for (const col of table.columns) {
+      if (col.sensitivityLevel === 'STRICT' || col.isExcluded) {
+        excludedCount++;
+        continue; // Skip strict/excluded columns
+      }
+      includedCount++;
+
+      context += `  - ${col.columnName}`;
+      if (col.semanticName) context += ` ("${col.semanticName}")`;
+      context += ` (${col.dataType})`;
+
+      if (col.unit) context += ` [Unit: ${col.unit}]`;
+      if (col.isPrimaryKey) context += ' [PK]';
+      if (col.isForeignKey) context += ` [FK -> ${col.referencedTable}.${col.referencedColumn}]`;
+      if (col.description) context += ` -- ${col.description}`;
+
+      // Code Values
+      if (col.isCode && col.codeValueList && col.codeValueList.length > 0) {
+        const codes = col.codeValueList.map(cv => `${cv.code}=${cv.value}`).join(', ');
+        context += `\n    Allowed Values: { ${codes} }`;
+      }
+      context += '\n';
+    }
+
+    // Metadata summary
+    const metadata = {
+      tableId: table.id,
+      tableName: table.tableName,
+      schemaName: table.schemaName,
+      tableType: table.tableType,
+      isExcluded: table.isExcluded,
+      isSyncedWithAI: table.isSyncedWithAI,
+      lastAiUpdate: table.lastAiUpdate,
+      importanceLevel: table.importanceLevel,
+      completenessScore: table.completenessScore,
+      metadataStatus: table.metadataStatus,
+      columnStats: {
+        total: table.columns.length,
+        included: includedCount,
+        excluded: excludedCount,
+        withSemanticName: table.columns.filter(c => c.semanticName).length,
+        withDescription: table.columns.filter(c => c.description).length,
+        withCodeValues: table.columns.filter(c => c.isCode && c.codeValueList && c.codeValueList.length > 0).length,
+      },
+      relationshipCount: relations.length,
+      fkCount: fkColumns.length,
+      contextLength: context.length,
+      estimatedTokens: Math.ceil(context.length / 4), // Rough token estimate
+    };
+
+    return { context, metadata };
+  }
+
   async updateTableDescription(tableId: string, description: string) {
     return this.prisma.tableMetadata.update({
       where: { id: tableId },

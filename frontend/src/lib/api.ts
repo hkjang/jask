@@ -236,6 +236,11 @@ class ApiClient {
     return this.request<any[]>(`/metadata/table/${tableId}/indexes`);
   }
 
+  // 테이블 AI 스키마 컨텍스트 조회
+  async getTableSchemaContext(tableId: string) {
+    return this.request<{ context: string; metadata: any }>(`/metadata/table/${tableId}/schema-context`);
+  }
+
   // NL2SQL
   async generateQuery(dataSourceId: string, question: string, autoExecute = false, threadId?: string) {
     return this.request('/nl2sql/generate', {

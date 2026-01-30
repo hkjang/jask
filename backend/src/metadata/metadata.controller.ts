@@ -195,6 +195,12 @@ export class MetadataController {
     return this.metadataService.getTableIndexes(tableId);
   }
 
+  @Get('table/:tableId/schema-context')
+  @ApiOperation({ summary: '단일 테이블 AI 스키마 컨텍스트 조회' })
+  async getTableSchemaContext(@Param('tableId') tableId: string) {
+    return this.metadataService.getTableSchemaContext(tableId);
+  }
+
   // --- Column Exclusion & Deletion ---
 
   @Patch('column/:columnId/exclude')
