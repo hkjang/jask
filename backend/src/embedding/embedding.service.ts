@@ -141,6 +141,14 @@ export class EmbeddingService {
     if (query.type) where.type = query.type;
     if (query.dataSourceId) where.dataSourceId = query.dataSourceId;
     if (query.isActive !== undefined) where.isActive = query.isActive;
+    
+    // Add search filter for content
+    if (query.search) {
+      where.content = {
+        contains: query.search,
+        mode: 'insensitive',
+      };
+    }
 
     const [items, total] = await Promise.all([
       this.prisma.embeddableItem.findMany({

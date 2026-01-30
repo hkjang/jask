@@ -900,6 +900,7 @@ class ApiClient {
     isActive?: boolean;
     limit?: number;
     offset?: number;
+    search?: string;
   }) {
     const params = new URLSearchParams();
     if (options?.type) params.set('type', options.type);
@@ -907,6 +908,7 @@ class ApiClient {
     if (options?.isActive !== undefined) params.set('isActive', String(options.isActive));
     if (options?.limit) params.set('limit', String(options.limit));
     if (options?.offset) params.set('offset', String(options.offset));
+    if (options?.search) params.set('search', options.search);
     const query = params.toString();
     return this.request<{ items: any[]; total: number }>(`/embedding/items${query ? `?${query}` : ''}`);
   }

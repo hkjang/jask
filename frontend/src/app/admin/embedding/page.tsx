@@ -60,8 +60,10 @@ import {
   Square,
   MoreHorizontal,
   X,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 interface EmbeddingConfig {
   id: string;
@@ -112,6 +114,11 @@ export default function EmbeddingManagementPage() {
   const [selectedType, setSelectedType] = useState<string>('TABLE');
   const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());
   const [isBulkProcessing, setIsBulkProcessing] = useState(false);
+  
+  // Pagination and search state
+  const [itemsPage, setItemsPage] = useState(1);
+  const [itemsPageSize, setItemsPageSize] = useState(50);
+  const [itemsSearch, setItemsSearch] = useState('');
   const [editingConfig, setEditingConfig] = useState<EmbeddingConfig | null>(null);
   const [configForm, setConfigForm] = useState({
     name: '',
@@ -139,9 +146,19 @@ export default function EmbeddingManagementPage() {
   });
 
   const { data: itemsData, isLoading: itemsLoading } = useQuery({
-    queryKey: ['embeddableItems', selectedType],
-    queryFn: () => api.getEmbeddableItems({ limit: 50, type: selectedType as 'TABLE' | 'COLUMN' | 'SAMPLE_QUERY' | 'DOCUMENT' | 'CUSTOM' }),
+    queryKey: ['embeddableItems', selectedType, itemsPage, itemsPageSize, itemsSearch],
+    queryFn: () => api.getEmbeddableItems({ 
+      limit: itemsPageSize, 
+      offset: (itemsPage - 1) * itemsPageSize,
+      type: selectedType as 'TABLE' | 'COLUMN' | 'SAMPLE_QUERY' | 'DOCUMENT' | 'CUSTOM',
+      search: itemsSearch || undefined,
+    }),
   });
+
+  // Reset page when type or search changes
+  useEffect(() => {
+    setItemsPage(1);
+  }, [selectedType, itemsSearch]);
 
   const { data: dataSources = [] } = useQuery({
     queryKey: ['dataSources'],
@@ -150,6 +167,7 @@ export default function EmbeddingManagementPage() {
 
   const items = itemsData?.items || [];
   const totalItems = itemsData?.total || 0;
+  const totalPages = Math.ceil(totalItems / itemsPageSize);
 
   // Mutations
   const configMutation = useMutation({
@@ -755,6 +773,40 @@ export default function EmbeddingManagementPage() {
                   <TabsTrigger value="DOCUMENT">문서</TabsTrigger>
                 </TabsList>
               </Tabs>
+
+              {/* Search and Page Size Controls */}
+              <div className="flex items-center gap-4">
+                <div className="relative flex-1 max-w-md">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="검색어 입력..."
+                    value={itemsSearch}
+                    onChange={(e) => setItemsSearch(e.target.value)}
+                    className="pl-10"
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground whitespace-nowrap">페이지당:</span>
+                  <Select
+                    value={String(itemsPageSize)}
+                    onValueChange={(val) => {
+                      setItemsPageSize(Number(val));
+                      setItemsPage(1);
+                    }}
+                  >
+                    <SelectTrigger className="w-[80px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="20">20</SelectItem>
+                      <SelectItem value="50">50</SelectItem>
+                      <SelectItem value="100">100</SelectItem>
+                      <SelectItem value="200">200</SelectItem>
+                      <SelectItem value="500">500</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
             </div>
 
             {itemsLoading ? (
@@ -908,6 +960,52 @@ export default function EmbeddingManagementPage() {
                   </Card>
                 ))}
               </div>
+              
+              {/* Pagination Controls */}
+              {totalPages > 1 && (
+                <div className="flex items-center justify-between pt-4 border-t">
+                  <div className="text-sm text-muted-foreground">
+                    {((itemsPage - 1) * itemsPageSize) + 1} - {Math.min(itemsPage * itemsPageSize, totalItems)}개 / 총 {totalItems}개
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setItemsPage(1)}
+                      disabled={itemsPage === 1}
+                    >
+                      처음
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={() => setItemsPage(p => Math.max(1, p - 1))}
+                      disabled={itemsPage === 1}
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                    <span className="text-sm px-2">
+                      {itemsPage} / {totalPages}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={() => setItemsPage(p => Math.min(totalPages, p + 1))}
+                      disabled={itemsPage === totalPages}
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setItemsPage(totalPages)}
+                      disabled={itemsPage === totalPages}
+                    >
+                      마지막
+                    </Button>
+                  </div>
+                </div>
+              )}
               </div>
             )}
           </TabsContent>

@@ -175,7 +175,7 @@ export class ListEmbeddableItemsDto {
   @IsNumber()
   @Type(() => Number)
   @Min(1)
-  @Max(100)
+  @Max(1000)
   limit?: number;
 
   @IsOptional()
@@ -183,6 +183,10 @@ export class ListEmbeddableItemsDto {
   @Type(() => Number)
   @Min(0)
   offset?: number;
+
+  @IsOptional()
+  @IsString()
+  search?: string;
 }
 
 export class BatchEmbedDto {
