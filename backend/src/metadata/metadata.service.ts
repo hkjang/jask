@@ -2191,6 +2191,83 @@ Include ALL ${columns.length} columns in your response.`;
   }
 
   // ===========================================
+  // 제외 설정 일괄 반영 (임베딩 갱신)
+  // ===========================================
+
+  /**
+   * 제외 설정이 변경된 테이블들의 임베딩을 일괄 갱신합니다.
+   * - 제외된 테이블: SchemaEmbedding 삭제
+   * - 제외된 컬럼이 있는 테이블: 해당 컬럼을 제외하고 임베딩 재생성
+   */
+  async syncExcludedItems(dataSourceId: string): Promise<{
+    deletedTables: number;
+    updatedTables: number;
+    errors: string[];
+  }> {
+    const errors: string[] = [];
+    let deletedTables = 0;
+    let updatedTables = 0;
+
+    // 1. 제외된 테이블의 SchemaEmbedding 삭제
+    const excludedTables = await this.prisma.tableMetadata.findMany({
+      where: { dataSourceId, isExcluded: true },
+      select: { id: true, tableName: true },
+    });
+
+    for (const table of excludedTables) {
+      try {
+        await this.prisma.$executeRaw`
+          DELETE FROM "SchemaEmbedding" WHERE "tableId" = ${table.id}
+        `;
+        deletedTables++;
+        this.logger.log(`Deleted embedding for excluded table: ${table.tableName}`);
+      } catch (error) {
+        errors.push(`${table.tableName}: 임베딩 삭제 실패 - ${error.message}`);
+      }
+    }
+
+    // 2. 제외된 컬럼이 있는 테이블의 임베딩 재생성
+    const tablesWithExcludedColumns = await this.prisma.tableMetadata.findMany({
+      where: {
+        dataSourceId,
+        isExcluded: false,
+        columns: {
+          some: { isExcluded: true },
+        },
+      },
+      include: {
+        columns: true,
+      },
+    });
+
+    for (const table of tablesWithExcludedColumns) {
+      try {
+        // 제외되지 않은 컬럼만 필터링
+        const includedColumns = table.columns.filter(c => !c.isExcluded);
+
+        const result = {
+          tableDescription: table.description,
+          columns: includedColumns.map(c => ({
+            columnName: c.columnName,
+            semanticName: c.semanticName,
+            description: c.description,
+          })),
+        };
+
+        await this.generateTableEmbedding(table, result);
+        updatedTables++;
+        this.logger.log(`Updated embedding for table with excluded columns: ${table.tableName}`);
+      } catch (error) {
+        errors.push(`${table.tableName}: 임베딩 갱신 실패 - ${error.message}`);
+      }
+    }
+
+    this.logger.log(`Sync excluded items completed: ${deletedTables} deleted, ${updatedTables} updated, ${errors.length} errors`);
+
+    return { deletedTables, updatedTables, errors };
+  }
+
+  // ===========================================
   // Excel Import/Export Methods
   // ===========================================
 
