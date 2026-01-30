@@ -82,18 +82,18 @@ model DataSource {
   // 추가 메타데이터
   description   String?  @db.Text
   environment   String   @default("development") // production, staging, development
-  
+
   // SSL 설정
   sslEnabled    Boolean  @default(false)
   sslConfig     Json?    // { mode: 'require'|'verify-ca'|'verify-full', ca?, cert?, key? }
-  
+
   // 연결 풀 설정
   poolConfig    Json?    // { maxConnections, connectionTimeout, idleTimeout }
-  
+
   // 헬스 모니터링
   lastHealthCheck DateTime?
   healthStatus    String   @default("unknown") // healthy, unhealthy, unknown
-  
+
   // 통계
   queryCount      Int      @default(0)
   avgResponseTime Float    @default(0)
@@ -103,7 +103,8 @@ model DataSource {
   queries     QueryHistory[]
   samples     SampleQuery[]
   recommendedQuestions RecommendedQuestion[]
-  
+  documents   Document[]
+
   // Role-based Access Control
   accessPermissions DataSourceAccess[]
 }
@@ -190,12 +191,13 @@ model ColumnMetadata {
   columnName       String
   dataType         String
   description      String?  @db.Text
-  
+
   // Extended Metadata
   semanticName     String?  // 비즈니스/논리적 이름
   unit             String?  // 단위 (예: kg, cm, krw)
   isCode           Boolean  @default(false)
   sensitivityLevel SensitivityLevel @default(INTERNAL)
+  aliases          String[] @default([])  // 동의어/별칭 (NL2SQL 정확도 향상용)
 
   isPrimaryKey     Boolean  @default(false)
   isForeignKey     Boolean  @default(false)
@@ -204,7 +206,7 @@ model ColumnMetadata {
   isNullable       Boolean  @default(true)
   isExcluded       Boolean  @default(false)  // AI 컨텍스트에서 제외
   codeValues       Json?    // Deprecated: Use CodeValue model instead if managing complex codes
-  
+
   codeValueList    CodeValue[]
 
   createdAt        DateTime @default(now())
@@ -641,6 +643,53 @@ model EmbeddableItem {
   @@index([sourceId])
   @@index([dataSourceId])
   @@index([isActive])
+}
+
+// ===========================================
+// 문서 관리 (Document Storage)
+// ===========================================
+model Document {
+  id              String       @id @default(uuid())
+
+  // 기본 정보
+  name            String                    // 원본 파일명
+  title           String?                   // 사용자 지정 제목
+  description     String?      @db.Text
+
+  // 파일 정보
+  mimeType        String                    // text/plain, text/markdown 등
+  fileSize        Int                       // 바이트
+
+  // 내용
+  content         String       @db.Text     // 전체 텍스트 내용
+
+  // 청킹 설정
+  chunkCount      Int          @default(1)  // 생성된 청크 수
+  chunkSize       Int          @default(1000) // 목표 청크 크기 (문자)
+  chunkOverlap    Int          @default(200)  // 청크 간 오버랩
+
+  // 연관 데이터소스 (선택적)
+  dataSourceId    String?
+  dataSource      DataSource?  @relation(fields: [dataSourceId], references: [id], onDelete: SetNull)
+
+  // 태그 및 분류
+  tags            String[]     @default([])
+  category        String?
+
+  // 상태
+  isActive        Boolean      @default(true)
+  isProcessed     Boolean      @default(false)  // 임베딩 생성 여부
+
+  // 업로더 정보
+  uploadedById    String?
+  uploadedByName  String?
+
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  @@index([dataSourceId])
+  @@index([isActive])
+  @@index([category])
 }
 
 // ===========================================

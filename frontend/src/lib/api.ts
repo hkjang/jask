@@ -980,6 +980,137 @@ class ApiClient {
   async syncAllEmbeddings() {
     return this.request<{ synced: number; errors: number }>('/embedding/sync/all', { method: 'POST' });
   }
+
+  // ==========================================
+  // Column Embedding API
+  // ==========================================
+
+  async updateColumnAliases(columnId: string, aliases: string[]) {
+    return this.request(`/embedding/column/${columnId}/aliases`, {
+      method: 'PUT',
+      body: { aliases },
+    });
+  }
+
+  async syncColumnEmbedding(columnId: string) {
+    return this.request(`/embedding/sync/column/${columnId}`, { method: 'POST' });
+  }
+
+  async syncTableColumnsEmbeddings(tableId: string) {
+    return this.request<{ synced: number; errors: number }>(
+      `/embedding/sync/table/${tableId}/columns`,
+      { method: 'POST' }
+    );
+  }
+
+  async syncDataSourceColumnsEmbeddings(dataSourceId: string) {
+    return this.request<{ synced: number; errors: number }>(
+      `/embedding/sync/datasource/${dataSourceId}/columns`,
+      { method: 'POST' }
+    );
+  }
+
+  // ==========================================
+  // Document API
+  // ==========================================
+
+  async getDocuments(options?: {
+    dataSourceId?: string;
+    isActive?: boolean;
+    search?: string;
+    limit?: number;
+    offset?: number;
+  }) {
+    const params = new URLSearchParams();
+    if (options?.dataSourceId) params.set('dataSourceId', options.dataSourceId);
+    if (options?.isActive !== undefined) params.set('isActive', String(options.isActive));
+    if (options?.search) params.set('search', options.search);
+    if (options?.limit) params.set('limit', String(options.limit));
+    if (options?.offset) params.set('offset', String(options.offset));
+    const query = params.toString();
+    return this.request<{ items: any[]; total: number }>(`/embedding/documents${query ? `?${query}` : ''}`);
+  }
+
+  async getDocument(id: string) {
+    return this.request<any>(`/embedding/documents/${id}`);
+  }
+
+  async createDocument(data: {
+    name: string;
+    title?: string;
+    description?: string;
+    content: string;
+    mimeType: string;
+    fileSize: number;
+    dataSourceId?: string;
+    tags?: string[];
+    category?: string;
+    chunkSize?: number;
+    chunkOverlap?: number;
+  }) {
+    return this.request('/embedding/documents', { method: 'POST', body: data });
+  }
+
+  async updateDocument(id: string, data: {
+    title?: string;
+    description?: string;
+    tags?: string[];
+    category?: string;
+    isActive?: boolean;
+  }) {
+    return this.request(`/embedding/documents/${id}`, { method: 'PUT', body: data });
+  }
+
+  async deleteDocument(id: string) {
+    return this.request(`/embedding/documents/${id}`, { method: 'DELETE' });
+  }
+
+  async syncDocumentEmbeddings(id: string) {
+    return this.request<{ synced: number; errors: number }>(
+      `/embedding/documents/${id}/sync`,
+      { method: 'POST' }
+    );
+  }
+
+  async uploadDocument(
+    file: File,
+    options?: {
+      dataSourceId?: string;
+      title?: string;
+      description?: string;
+      tags?: string[];
+      category?: string;
+      chunkSize?: number;
+      chunkOverlap?: number;
+    }
+  ) {
+    const token = this.getToken();
+    const formData = new FormData();
+    formData.append('file', file);
+    if (options?.dataSourceId) formData.append('dataSourceId', options.dataSourceId);
+    if (options?.title) formData.append('title', options.title);
+    if (options?.description) formData.append('description', options.description);
+    if (options?.tags) formData.append('tags', JSON.stringify(options.tags));
+    if (options?.category) formData.append('category', options.category);
+    if (options?.chunkSize) formData.append('chunkSize', String(options.chunkSize));
+    if (options?.chunkOverlap) formData.append('chunkOverlap', String(options.chunkOverlap));
+
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const response = await fetch(`${API_BASE_URL}/embedding/documents/upload`, {
+      method: 'POST',
+      headers,
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.message || '업로드 실패');
+    }
+
+    return response.json();
+  }
 }
 
 export const api = new ApiClient();

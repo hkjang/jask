@@ -1012,5 +1012,408 @@ export class EmbeddingService {
     this.logger.log(`Total embedding sync complete: ${synced} synced, ${errors} errors`);
     return { synced, errors };
   }
+
+  // ===========================================
+  // Column Embedding (컬럼 임베딩)
+  // ===========================================
+
+  /**
+   * 컬럼 동의어(aliases) 업데이트
+   */
+  async updateColumnAliases(columnId: string, aliases: string[]): Promise<void> {
+    await this.prisma.columnMetadata.update({
+      where: { id: columnId },
+      data: { aliases },
+    });
+
+    // 컬럼 임베딩 재동기화
+    await this.syncColumnEmbedding(columnId);
+  }
+
+  /**
+   * 단일 컬럼의 임베딩 동기화
+   * 콘텐츠: 컬럼명 + 시맨틱명 + 타입 + 설명 + 동의어
+   */
+  async syncColumnEmbedding(columnId: string): Promise<void> {
+    try {
+      const column = await this.prisma.columnMetadata.findUnique({
+        where: { id: columnId },
+        include: {
+          table: {
+            select: {
+              tableName: true,
+              schemaName: true,
+              dataSourceId: true,
+              isExcluded: true,
+            },
+          },
+        },
+      });
+
+      if (!column || column.isExcluded || column.table.isExcluded) {
+        // 컬럼이 없거나 제외된 경우 기존 항목 삭제
+        await this.prisma.embeddableItem.deleteMany({
+          where: { sourceId: columnId, type: 'COLUMN' },
+        });
+        return;
+      }
+
+      // 임베딩 콘텐츠 생성
+      let content = `Column: ${column.table.tableName}.${column.columnName}`;
+      content += `\nData Type: ${column.dataType}`;
+      if (column.semanticName) content += `\nSemantic Name: ${column.semanticName}`;
+      if (column.description) content += `\nDescription: ${column.description}`;
+      if (column.aliases && column.aliases.length > 0) {
+        content += `\nAliases/Synonyms: ${column.aliases.join(', ')}`;
+      }
+      if (column.unit) content += `\nUnit: ${column.unit}`;
+      if (column.isPrimaryKey) content += `\n[Primary Key]`;
+      if (column.isForeignKey && column.referencedTable) {
+        content += `\n[Foreign Key → ${column.referencedTable}.${column.referencedColumn}]`;
+      }
+
+      const tokens = this.tokenize(content);
+      const contentHash = this.hashContent(content);
+
+      // Upsert EmbeddableItem
+      const existingItem = await this.prisma.embeddableItem.findFirst({
+        where: { sourceId: columnId, type: 'COLUMN' },
+      });
+
+      const metadata = {
+        tableName: column.table.tableName,
+        schemaName: column.table.schemaName,
+        columnName: column.columnName,
+        dataType: column.dataType,
+        semanticName: column.semanticName,
+        aliases: column.aliases,
+      };
+
+      if (existingItem) {
+        if (existingItem.contentHash !== contentHash) {
+          await this.prisma.embeddableItem.update({
+            where: { id: existingItem.id },
+            data: {
+              content,
+              contentHash,
+              tokens,
+              tokenCount: tokens.length,
+              lastEmbeddedAt: null,
+              metadata,
+            },
+          });
+          this.logger.log(`Updated EmbeddableItem for column ${column.table.tableName}.${column.columnName}`);
+        }
+      } else {
+        await this.prisma.embeddableItem.create({
+          data: {
+            type: 'COLUMN',
+            sourceId: columnId,
+            content,
+            contentHash,
+            tokens,
+            tokenCount: tokens.length,
+            dataSourceId: column.table.dataSourceId,
+            metadata,
+          },
+        });
+        this.logger.log(`Created EmbeddableItem for column ${column.table.tableName}.${column.columnName}`);
+      }
+    } catch (error) {
+      this.logger.error(`Failed to sync column embedding for ${columnId}: ${error.message}`);
+      throw error;
+    }
+  }
+
+  /**
+   * 테이블의 모든 컬럼 임베딩 동기화
+   */
+  async syncTableColumnsEmbeddings(tableId: string): Promise<{ synced: number; errors: number }> {
+    const columns = await this.prisma.columnMetadata.findMany({
+      where: { tableId, isExcluded: false },
+      select: { id: true },
+    });
+
+    let synced = 0;
+    let errors = 0;
+
+    for (const column of columns) {
+      try {
+        await this.syncColumnEmbedding(column.id);
+        synced++;
+      } catch (error) {
+        errors++;
+        this.logger.error(`Failed to sync column ${column.id}: ${error.message}`);
+      }
+    }
+
+    return { synced, errors };
+  }
+
+  /**
+   * 데이터소스의 모든 컬럼 임베딩 동기화
+   */
+  async syncDataSourceColumnsEmbeddings(dataSourceId: string): Promise<{ synced: number; errors: number }> {
+    const columns = await this.prisma.columnMetadata.findMany({
+      where: {
+        table: { dataSourceId, isExcluded: false },
+        isExcluded: false,
+      },
+      select: { id: true },
+    });
+
+    let synced = 0;
+    let errors = 0;
+
+    for (const column of columns) {
+      try {
+        await this.syncColumnEmbedding(column.id);
+        synced++;
+      } catch (error) {
+        errors++;
+      }
+    }
+
+    this.logger.log(`DataSource ${dataSourceId} column embedding sync: ${synced} synced, ${errors} errors`);
+    return { synced, errors };
+  }
+
+  // ===========================================
+  // Document Management (문서 관리)
+  // ===========================================
+
+  /**
+   * 새 문서 생성 및 청킹 처리
+   */
+  async createDocument(
+    dto: {
+      name: string;
+      title?: string;
+      description?: string;
+      content: string;
+      mimeType: string;
+      fileSize: number;
+      dataSourceId?: string;
+      tags?: string[];
+      category?: string;
+      chunkSize?: number;
+      chunkOverlap?: number;
+    },
+    userId?: string,
+    userName?: string,
+  ) {
+    const document = await this.prisma.document.create({
+      data: {
+        name: dto.name,
+        title: dto.title,
+        description: dto.description,
+        content: dto.content,
+        mimeType: dto.mimeType,
+        fileSize: dto.fileSize,
+        dataSourceId: dto.dataSourceId,
+        tags: dto.tags || [],
+        category: dto.category,
+        chunkSize: dto.chunkSize || 1000,
+        chunkOverlap: dto.chunkOverlap || 200,
+        uploadedById: userId,
+        uploadedByName: userName,
+      },
+    });
+
+    // 문서 임베딩 생성 (청킹)
+    await this.syncDocumentEmbeddings(document.id);
+
+    return this.prisma.document.findUnique({ where: { id: document.id } });
+  }
+
+  /**
+   * 문서 메타데이터 수정
+   */
+  async updateDocument(
+    id: string,
+    dto: {
+      title?: string;
+      description?: string;
+      tags?: string[];
+      category?: string;
+      isActive?: boolean;
+    },
+  ) {
+    return this.prisma.document.update({
+      where: { id },
+      data: dto,
+    });
+  }
+
+  /**
+   * 문서 및 임베딩 삭제
+   */
+  async deleteDocument(id: string): Promise<void> {
+    // 먼저 임베딩 삭제
+    await this.prisma.embeddableItem.deleteMany({
+      where: {
+        type: 'DOCUMENT',
+        sourceId: { startsWith: id },
+      },
+    });
+
+    // 문서 삭제
+    await this.prisma.document.delete({ where: { id } });
+  }
+
+  /**
+   * 문서 목록 조회
+   */
+  async listDocuments(query: {
+    dataSourceId?: string;
+    isActive?: boolean;
+    search?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<{ items: any[]; total: number }> {
+    const where: any = {};
+    if (query.dataSourceId) where.dataSourceId = query.dataSourceId;
+    if (query.isActive !== undefined) where.isActive = query.isActive;
+    if (query.search) {
+      where.OR = [
+        { name: { contains: query.search, mode: 'insensitive' } },
+        { title: { contains: query.search, mode: 'insensitive' } },
+        { description: { contains: query.search, mode: 'insensitive' } },
+      ];
+    }
+
+    const [items, total] = await Promise.all([
+      this.prisma.document.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        take: query.limit ?? 50,
+        skip: query.offset ?? 0,
+      }),
+      this.prisma.document.count({ where }),
+    ]);
+
+    return { items, total };
+  }
+
+  /**
+   * 단일 문서 조회
+   */
+  async getDocument(id: string) {
+    const doc = await this.prisma.document.findUnique({ where: { id } });
+    if (!doc) throw new NotFoundException(`Document not found: ${id}`);
+    return doc;
+  }
+
+  /**
+   * 텍스트를 오버랩되는 청크로 분할
+   */
+  private chunkText(text: string, chunkSize: number, overlap: number): string[] {
+    const chunks: string[] = [];
+    let start = 0;
+
+    while (start < text.length) {
+      const end = Math.min(start + chunkSize, text.length);
+      chunks.push(text.slice(start, end));
+
+      // 다음 청크 시작 위치
+      const nextStart = end - overlap;
+      if (nextStart <= start) break; // 무한 루프 방지
+      start = nextStart;
+
+      // 마지막 청크인 경우 종료
+      if (end >= text.length) break;
+    }
+
+    return chunks;
+  }
+
+  /**
+   * 문서 임베딩 동기화 (청크 생성)
+   */
+  async syncDocumentEmbeddings(documentId: string): Promise<{ synced: number; errors: number }> {
+    try {
+      const document = await this.prisma.document.findUnique({
+        where: { id: documentId },
+      });
+
+      if (!document || !document.isActive) {
+        // 문서가 없거나 비활성화된 경우 임베딩 삭제
+        await this.prisma.embeddableItem.deleteMany({
+          where: {
+            type: 'DOCUMENT',
+            sourceId: { startsWith: documentId },
+          },
+        });
+        return { synced: 0, errors: 0 };
+      }
+
+      // 기존 청크 삭제
+      await this.prisma.embeddableItem.deleteMany({
+        where: {
+          type: 'DOCUMENT',
+          sourceId: { startsWith: documentId },
+        },
+      });
+
+      // 청크 생성
+      const chunks = this.chunkText(
+        document.content,
+        document.chunkSize,
+        document.chunkOverlap,
+      );
+
+      let synced = 0;
+      let errors = 0;
+
+      for (let i = 0; i < chunks.length; i++) {
+        try {
+          const chunkContent = chunks[i];
+          const tokens = this.tokenize(chunkContent);
+          const contentHash = this.hashContent(chunkContent);
+          const sourceId = `${documentId}_chunk_${i}`;
+
+          await this.prisma.embeddableItem.create({
+            data: {
+              type: 'DOCUMENT',
+              sourceId,
+              content: chunkContent,
+              contentHash,
+              tokens,
+              tokenCount: tokens.length,
+              dataSourceId: document.dataSourceId,
+              metadata: {
+                documentId: document.id,
+                documentName: document.name,
+                documentTitle: document.title,
+                chunkIndex: i,
+                totalChunks: chunks.length,
+                tags: document.tags,
+                category: document.category,
+              },
+            },
+          });
+          synced++;
+        } catch (error) {
+          errors++;
+          this.logger.error(`Failed to create chunk ${i} for document ${documentId}: ${error.message}`);
+        }
+      }
+
+      // 문서 상태 업데이트
+      await this.prisma.document.update({
+        where: { id: documentId },
+        data: {
+          chunkCount: chunks.length,
+          isProcessed: synced > 0,
+        },
+      });
+
+      this.logger.log(`Document ${documentId} sync: ${synced} chunks created, ${errors} errors`);
+      return { synced, errors };
+    } catch (error) {
+      this.logger.error(`Failed to sync document ${documentId}: ${error.message}`);
+      throw error;
+    }
+  }
 }
 

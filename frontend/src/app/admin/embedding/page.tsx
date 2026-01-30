@@ -62,8 +62,11 @@ import {
   X,
   ChevronLeft,
   ChevronRight,
+  Upload,
+  FileText,
+  Tag,
 } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 interface EmbeddingConfig {
   id: string;
@@ -103,6 +106,25 @@ interface SearchResult {
   metadata?: any;
 }
 
+interface DocumentItem {
+  id: string;
+  name: string;
+  title?: string;
+  description?: string;
+  mimeType: string;
+  fileSize: number;
+  content: string;
+  chunkCount: number;
+  chunkSize: number;
+  chunkOverlap: number;
+  dataSourceId?: string;
+  tags: string[];
+  category?: string;
+  isActive: boolean;
+  isProcessed: boolean;
+  createdAt: string;
+}
+
 export default function EmbeddingManagementPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -139,6 +161,26 @@ export default function EmbeddingManagementPage() {
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searchTiming, setSearchTiming] = useState<any>(null);
 
+  // Column alias management state
+  const [isColumnDialogOpen, setIsColumnDialogOpen] = useState(false);
+  const [selectedColumnItem, setSelectedColumnItem] = useState<any>(null);
+  const [columnAliases, setColumnAliases] = useState<string[]>([]);
+  const [newAlias, setNewAlias] = useState('');
+
+  // Document management state
+  const [isDocumentDialogOpen, setIsDocumentDialogOpen] = useState(false);
+  const [selectedDocument, setSelectedDocument] = useState<DocumentItem | null>(null);
+  const [documentForm, setDocumentForm] = useState({
+    title: '',
+    description: '',
+    dataSourceId: '',
+    tags: [] as string[],
+    category: '',
+  });
+  const [newTag, setNewTag] = useState('');
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   // Fetch data
   const { data: configs = [], isLoading: configsLoading } = useQuery({
     queryKey: ['embeddingConfigs'],
@@ -163,6 +205,13 @@ export default function EmbeddingManagementPage() {
   const { data: dataSources = [] } = useQuery({
     queryKey: ['dataSources'],
     queryFn: () => api.getDataSources(),
+  });
+
+  // Documents query (for DOCUMENT tab)
+  const { data: documentsData, isLoading: documentsLoading, refetch: refetchDocuments } = useQuery({
+    queryKey: ['documents', itemsSearch],
+    queryFn: () => api.getDocuments({ search: itemsSearch || undefined, limit: 100 }),
+    enabled: selectedType === 'DOCUMENT',
   });
 
   const items = itemsData?.items || [];
@@ -243,6 +292,78 @@ export default function EmbeddingManagementPage() {
     onError: () => toast({ title: '임베딩 생성 실패', variant: 'destructive' }),
   });
 
+  // Column alias mutation
+  const updateColumnAliasesMutation = useMutation({
+    mutationFn: async ({ columnId, aliases }: { columnId: string; aliases: string[] }) => {
+      return api.updateColumnAliases(columnId, aliases);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['embeddableItems'] });
+      toast({ title: '컬럼 동의어가 업데이트되었습니다' });
+      setIsColumnDialogOpen(false);
+      setSelectedColumnItem(null);
+      setColumnAliases([]);
+    },
+    onError: () => toast({ title: '동의어 업데이트 실패', variant: 'destructive' }),
+  });
+
+  const syncDataSourceColumnsMutation = useMutation({
+    mutationFn: async (dataSourceId: string) => {
+      return api.syncDataSourceColumnsEmbeddings(dataSourceId);
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['embeddableItems'] });
+      toast({
+        title: '컬럼 임베딩 동기화 완료',
+        description: `동기화: ${data.synced}건, 오류: ${data.errors}건`,
+      });
+    },
+    onError: () => toast({ title: '동기화 실패', variant: 'destructive' }),
+  });
+
+  // Document mutations
+  const uploadDocumentMutation = useMutation({
+    mutationFn: async (params: { file: File; options: any }) => {
+      return api.uploadDocument(params.file, params.options);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['documents'] });
+      queryClient.invalidateQueries({ queryKey: ['embeddableItems'] });
+      toast({ title: '문서가 업로드되었습니다' });
+      setIsDocumentDialogOpen(false);
+      resetDocumentForm();
+    },
+    onError: (error: any) => toast({ title: error.message || '업로드 실패', variant: 'destructive' }),
+  });
+
+  const deleteDocumentMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return api.deleteDocument(id);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['documents'] });
+      queryClient.invalidateQueries({ queryKey: ['embeddableItems'] });
+      toast({ title: '문서가 삭제되었습니다' });
+      setSelectedDocument(null);
+    },
+    onError: () => toast({ title: '삭제 실패', variant: 'destructive' }),
+  });
+
+  const syncDocumentEmbeddingsMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return api.syncDocumentEmbeddings(id);
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['documents'] });
+      queryClient.invalidateQueries({ queryKey: ['embeddableItems'] });
+      toast({
+        title: '문서 임베딩 재생성 완료',
+        description: `${data.synced}개 청크 생성`,
+      });
+    },
+    onError: () => toast({ title: '임베딩 재생성 실패', variant: 'destructive' }),
+  });
+
   const resetConfigForm = () => {
     setConfigForm({
       name: '',
@@ -257,6 +378,95 @@ export default function EmbeddingManagementPage() {
       dataSourceId: '',
     });
     setEditingConfig(null);
+  };
+
+  const resetDocumentForm = () => {
+    setDocumentForm({
+      title: '',
+      description: '',
+      dataSourceId: '',
+      tags: [],
+      category: '',
+    });
+    setNewTag('');
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  // Column alias dialog handlers
+  const openColumnAliasDialog = (item: any) => {
+    setSelectedColumnItem(item);
+    setColumnAliases(item.metadata?.aliases || []);
+    setNewAlias('');
+    setIsColumnDialogOpen(true);
+  };
+
+  const handleAddAlias = () => {
+    if (newAlias.trim() && !columnAliases.includes(newAlias.trim())) {
+      setColumnAliases([...columnAliases, newAlias.trim()]);
+      setNewAlias('');
+    }
+  };
+
+  const handleRemoveAlias = (index: number) => {
+    setColumnAliases(columnAliases.filter((_, i) => i !== index));
+  };
+
+  const handleSaveColumnAliases = () => {
+    if (!selectedColumnItem?.sourceId) return;
+    updateColumnAliasesMutation.mutate({
+      columnId: selectedColumnItem.sourceId,
+      aliases: columnAliases,
+    });
+  };
+
+  // Document handlers
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    const allowedExtensions = ['.txt', '.md', '.csv'];
+    const ext = file.name.toLowerCase().substring(file.name.lastIndexOf('.'));
+    if (!allowedExtensions.includes(ext)) {
+      toast({ title: '지원되지 않는 파일 형식입니다', description: '.txt, .md, .csv 파일만 업로드 가능합니다', variant: 'destructive' });
+      return;
+    }
+
+    // Validate file size (5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      toast({ title: '파일 크기 초과', description: '최대 5MB까지 업로드 가능합니다', variant: 'destructive' });
+      return;
+    }
+
+    setIsUploading(true);
+    uploadDocumentMutation.mutate({
+      file,
+      options: {
+        title: documentForm.title || undefined,
+        description: documentForm.description || undefined,
+        dataSourceId: documentForm.dataSourceId || undefined,
+        tags: documentForm.tags.length > 0 ? documentForm.tags : undefined,
+        category: documentForm.category || undefined,
+      },
+    }, {
+      onSettled: () => setIsUploading(false),
+    });
+  };
+
+  const handleAddTag = () => {
+    if (newTag.trim() && !documentForm.tags.includes(newTag.trim())) {
+      setDocumentForm({ ...documentForm, tags: [...documentForm.tags, newTag.trim()] });
+      setNewTag('');
+    }
+  };
+
+  const handleRemoveTag = (index: number) => {
+    setDocumentForm({
+      ...documentForm,
+      tags: documentForm.tags.filter((_, i) => i !== index),
+    });
   };
 
   const openEditConfig = (config: EmbeddingConfig) => {
@@ -738,6 +948,30 @@ export default function EmbeddingManagementPage() {
                         샘플 쿼리 관리 이동
                     </Button>
                   )}
+                  {selectedType === 'COLUMN' && (
+                    <Select
+                      onValueChange={(dsId) => {
+                        if (dsId) syncDataSourceColumnsMutation.mutate(dsId);
+                      }}
+                    >
+                      <SelectTrigger className="w-[200px]">
+                        <SelectValue placeholder="컬럼 임베딩 동기화" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {dataSources.map((ds: any) => (
+                          <SelectItem key={ds.id} value={ds.id}>
+                            {ds.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                  {selectedType === 'DOCUMENT' && (
+                    <Button onClick={() => setIsDocumentDialogOpen(true)}>
+                      <Upload className="h-4 w-4 mr-2" />
+                      문서 업로드
+                    </Button>
+                  )}
                   <Button
                     variant="outline"
                     onClick={() => syncMetadataMutation.mutate()}
@@ -809,7 +1043,90 @@ export default function EmbeddingManagementPage() {
               </div>
             </div>
 
-            {itemsLoading ? (
+            {/* DOCUMENT 탭 전용 UI */}
+            {selectedType === 'DOCUMENT' ? (
+              documentsLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                </div>
+              ) : (documentsData?.items || []).length === 0 ? (
+                <Card className="py-12">
+                  <CardContent className="flex flex-col items-center justify-center text-center">
+                    <FileText className="h-12 w-12 text-muted-foreground mb-4" />
+                    <h3 className="text-lg font-semibold">업로드된 문서가 없습니다</h3>
+                    <p className="text-muted-foreground mb-4">
+                      문서를 업로드하여 임베딩을 생성하세요
+                    </p>
+                    <Button onClick={() => setIsDocumentDialogOpen(true)}>
+                      <Upload className="h-4 w-4 mr-2" />
+                      문서 업로드
+                    </Button>
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="grid gap-2">
+                  {(documentsData?.items || []).map((doc: DocumentItem) => (
+                    <Card
+                      key={doc.id}
+                      className="py-2 cursor-pointer hover:bg-muted/50 transition-colors"
+                      onClick={() => setSelectedDocument(doc)}
+                    >
+                      <CardContent className="flex items-center justify-between py-2">
+                        <div className="flex items-center gap-3 flex-1 min-w-0">
+                          <div className="flex items-center justify-center h-10 w-10 rounded-lg bg-purple-500/10 text-purple-500">
+                            <FileText className="h-5 w-5" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <p className="font-medium text-sm truncate">{doc.title || doc.name}</p>
+                              {doc.isProcessed ? (
+                                <Badge variant="success" className="text-xs">임베딩됨</Badge>
+                              ) : (
+                                <Badge variant="outline" className="text-xs">대기중</Badge>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1">
+                              <span>{(doc.fileSize / 1024).toFixed(1)} KB</span>
+                              <span>{doc.chunkCount}개 청크</span>
+                              {doc.tags && doc.tags.length > 0 && (
+                                <span className="flex items-center gap-1">
+                                  <Tag className="h-3 w-3" />
+                                  {doc.tags.length}
+                                </span>
+                              )}
+                              <span>{new Date(doc.createdAt).toLocaleDateString('ko-KR')}</span>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            title="임베딩 재생성"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              syncDocumentEmbeddingsMutation.mutate(doc.id);
+                            }}
+                          >
+                            <RefreshCw className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedDocument(doc);
+                            }}
+                          >
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )
+            ) : itemsLoading ? (
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
               </div>
@@ -819,7 +1136,9 @@ export default function EmbeddingManagementPage() {
                   <Database className="h-12 w-12 text-muted-foreground mb-4" />
                   <h3 className="text-lg font-semibold">임베딩 항목이 없습니다</h3>
                   <p className="text-muted-foreground">
-                    메타데이터 동기화 시 자동으로 추가됩니다
+                    {selectedType === 'COLUMN'
+                      ? '데이터소스를 선택하여 컬럼 임베딩을 동기화하세요'
+                      : '메타데이터 동기화 시 자동으로 추가됩니다'}
                   </p>
                 </CardContent>
               </Card>
@@ -927,8 +1246,22 @@ export default function EmbeddingManagementPage() {
                           </span>
                         </div>
 
-                        <Button 
-                          variant="ghost" 
+                        {item.type === 'COLUMN' && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            title="동의어 관리"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openColumnAliasDialog(item);
+                            }}
+                          >
+                            <Tag className="h-4 w-4" />
+                          </Button>
+                        )}
+
+                        <Button
+                          variant="ghost"
                           size="icon"
                           title="임베딩 생성"
                           disabled={generateEmbeddingMutation.isPending}
@@ -1296,6 +1629,354 @@ export default function EmbeddingManagementPage() {
 
             <DialogFooter>
               <Button onClick={() => setSelectedItem(null)}>닫기</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Column Alias Dialog */}
+        <Dialog open={isColumnDialogOpen} onOpenChange={setIsColumnDialogOpen}>
+          <DialogContent className="sm:max-w-[600px]">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Tag className="h-5 w-5" />
+                컬럼 동의어 관리
+              </DialogTitle>
+              <DialogDescription>
+                NL2SQL 정확도 향상을 위한 컬럼 동의어(별칭)를 관리합니다.
+              </DialogDescription>
+            </DialogHeader>
+
+            {selectedColumnItem && (
+              <div className="space-y-4 py-4">
+                {/* Column Info */}
+                <div className="p-4 bg-muted rounded-lg">
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    {selectedColumnItem.metadata?.tableName && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-muted-foreground">테이블:</span>
+                        <span className="font-medium">{selectedColumnItem.metadata.tableName}</span>
+                      </div>
+                    )}
+                    {selectedColumnItem.metadata?.columnName && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-muted-foreground">컬럼:</span>
+                        <span className="font-medium">{selectedColumnItem.metadata.columnName}</span>
+                      </div>
+                    )}
+                    {selectedColumnItem.metadata?.dataType && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-muted-foreground">타입:</span>
+                        <code className="px-1.5 py-0.5 bg-background rounded text-xs">{selectedColumnItem.metadata.dataType}</code>
+                      </div>
+                    )}
+                    {selectedColumnItem.metadata?.semanticName && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-muted-foreground">시맨틱명:</span>
+                        <span className="font-medium">{selectedColumnItem.metadata.semanticName}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Aliases Management */}
+                <div className="space-y-3">
+                  <label className="text-sm font-medium">동의어/별칭</label>
+                  <div className="flex gap-2">
+                    <Input
+                      value={newAlias}
+                      onChange={(e) => setNewAlias(e.target.value)}
+                      placeholder="새 동의어 입력 (예: 고객번호, customer_no)"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleAddAlias();
+                        }
+                      }}
+                    />
+                    <Button onClick={handleAddAlias} disabled={!newAlias.trim()}>
+                      추가
+                    </Button>
+                  </div>
+
+                  {columnAliases.length > 0 ? (
+                    <div className="flex flex-wrap gap-2 p-3 bg-muted/30 rounded-lg min-h-[60px]">
+                      {columnAliases.map((alias, idx) => (
+                        <Badge
+                          key={idx}
+                          variant="secondary"
+                          className="gap-1 py-1.5 px-3 text-sm"
+                        >
+                          {alias}
+                          <X
+                            className="h-3 w-3 cursor-pointer hover:text-destructive"
+                            onClick={() => handleRemoveAlias(idx)}
+                          />
+                        </Badge>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-sm text-muted-foreground p-3 bg-muted/30 rounded-lg text-center">
+                      등록된 동의어가 없습니다
+                    </div>
+                  )}
+
+                  <p className="text-xs text-muted-foreground">
+                    동의어를 추가하면 사용자가 다양한 표현으로 질문해도 해당 컬럼을 찾을 수 있습니다.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsColumnDialogOpen(false)}>
+                취소
+              </Button>
+              <Button
+                onClick={handleSaveColumnAliases}
+                disabled={updateColumnAliasesMutation.isPending}
+              >
+                {updateColumnAliasesMutation.isPending && (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                )}
+                저장 및 임베딩 갱신
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Document Upload Dialog */}
+        <Dialog open={isDocumentDialogOpen} onOpenChange={(open) => {
+          setIsDocumentDialogOpen(open);
+          if (!open) resetDocumentForm();
+        }}>
+          <DialogContent className="sm:max-w-[600px]">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <FileText className="h-5 w-5" />
+                문서 업로드
+              </DialogTitle>
+              <DialogDescription>
+                텍스트 기반 문서(.txt, .md, .csv)를 업로드하여 임베딩을 생성합니다.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4 py-4">
+              {/* File Upload Area */}
+              <div
+                className="border-2 border-dashed rounded-lg p-8 text-center cursor-pointer hover:border-primary hover:bg-muted/50 transition-colors"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <Upload className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                <p className="text-sm font-medium">
+                  클릭하거나 파일을 선택하여 업로드
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  .txt, .md, .csv 파일 지원 (최대 5MB)
+                </p>
+              </div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".txt,.md,.csv,text/plain,text/markdown,text/csv"
+                onChange={handleFileSelect}
+                className="hidden"
+              />
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">제목 (선택)</label>
+                  <Input
+                    value={documentForm.title}
+                    onChange={(e) => setDocumentForm({ ...documentForm, title: e.target.value })}
+                    placeholder="문서 제목"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">데이터소스 연결 (선택)</label>
+                  <Select
+                    value={documentForm.dataSourceId || 'NONE'}
+                    onValueChange={(val) => setDocumentForm({ ...documentForm, dataSourceId: val === 'NONE' ? '' : val })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="연결할 데이터소스" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="NONE">없음 (전역)</SelectItem>
+                      {dataSources.map((ds: any) => (
+                        <SelectItem key={ds.id} value={ds.id}>{ds.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">설명 (선택)</label>
+                <Textarea
+                  value={documentForm.description}
+                  onChange={(e) => setDocumentForm({ ...documentForm, description: e.target.value })}
+                  placeholder="문서에 대한 설명"
+                  rows={2}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">태그 (선택)</label>
+                <div className="flex gap-2">
+                  <Input
+                    value={newTag}
+                    onChange={(e) => setNewTag(e.target.value)}
+                    placeholder="태그 입력 후 Enter"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleAddTag();
+                      }
+                    }}
+                  />
+                  <Button variant="outline" onClick={handleAddTag} disabled={!newTag.trim()}>
+                    추가
+                  </Button>
+                </div>
+                {documentForm.tags.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {documentForm.tags.map((tag, idx) => (
+                      <Badge key={idx} variant="secondary" className="gap-1">
+                        {tag}
+                        <X
+                          className="h-3 w-3 cursor-pointer hover:text-destructive"
+                          onClick={() => handleRemoveTag(idx)}
+                        />
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsDocumentDialogOpen(false)}>
+                취소
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Document Detail Dialog */}
+        <Dialog open={!!selectedDocument} onOpenChange={(open) => !open && setSelectedDocument(null)}>
+          <DialogContent className="sm:max-w-[700px] max-h-[85vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <FileText className="h-5 w-5" />
+                문서 상세
+              </DialogTitle>
+              <DialogDescription>
+                {selectedDocument?.name}
+              </DialogDescription>
+            </DialogHeader>
+
+            {selectedDocument && (
+              <div className="space-y-4 py-4">
+                {/* Document Info */}
+                <div className="grid grid-cols-2 gap-4 p-4 bg-muted rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <span className="text-muted-foreground text-sm">파일명:</span>
+                    <span className="font-medium text-sm">{selectedDocument.name}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-muted-foreground text-sm">크기:</span>
+                    <span className="font-medium text-sm">{(selectedDocument.fileSize / 1024).toFixed(1)} KB</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-muted-foreground text-sm">청크 수:</span>
+                    <span className="font-medium text-sm">{selectedDocument.chunkCount}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-muted-foreground text-sm">상태:</span>
+                    {selectedDocument.isProcessed ? (
+                      <Badge variant="success">임베딩됨</Badge>
+                    ) : (
+                      <Badge variant="outline">대기중</Badge>
+                    )}
+                  </div>
+                  {selectedDocument.title && (
+                    <div className="col-span-2 flex items-center gap-2">
+                      <span className="text-muted-foreground text-sm">제목:</span>
+                      <span className="font-medium text-sm">{selectedDocument.title}</span>
+                    </div>
+                  )}
+                  {selectedDocument.description && (
+                    <div className="col-span-2 flex items-start gap-2">
+                      <span className="text-muted-foreground text-sm">설명:</span>
+                      <span className="text-sm">{selectedDocument.description}</span>
+                    </div>
+                  )}
+                  {selectedDocument.tags && selectedDocument.tags.length > 0 && (
+                    <div className="col-span-2 flex items-center gap-2 flex-wrap">
+                      <span className="text-muted-foreground text-sm">태그:</span>
+                      {selectedDocument.tags.map((tag, idx) => (
+                        <Badge key={idx} variant="secondary">{tag}</Badge>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Document Content Preview */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">문서 내용 (미리보기)</label>
+                  <div className="p-4 bg-muted rounded-md whitespace-pre-wrap text-sm max-h-[300px] overflow-y-auto font-mono">
+                    {selectedDocument.content.slice(0, 3000)}
+                    {selectedDocument.content.length > 3000 && (
+                      <span className="text-muted-foreground">... (총 {selectedDocument.content.length.toLocaleString()}자)</span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="text-xs text-muted-foreground">
+                  생성일: {new Date(selectedDocument.createdAt).toLocaleString('ko-KR')}
+                </div>
+              </div>
+            )}
+
+            <DialogFooter className="gap-2">
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="destructive" size="sm">
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    삭제
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>문서 삭제</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      정말 이 문서를 삭제하시겠습니까? 관련 임베딩도 함께 삭제됩니다.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>취소</AlertDialogCancel>
+                    <AlertDialogAction
+                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                      onClick={() => selectedDocument && deleteDocumentMutation.mutate(selectedDocument.id)}
+                    >
+                      삭제
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+              <Button
+                variant="outline"
+                onClick={() => selectedDocument && syncDocumentEmbeddingsMutation.mutate(selectedDocument.id)}
+                disabled={syncDocumentEmbeddingsMutation.isPending}
+              >
+                {syncDocumentEmbeddingsMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                )}
+                임베딩 재생성
+              </Button>
+              <Button onClick={() => setSelectedDocument(null)}>닫기</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
