@@ -1470,6 +1470,9 @@ export class MetadataService {
       }
     });
 
+    // LLM 설정 조회 (루프 밖에서 한 번만)
+    const llmSettings = await this.getLLMSettings();
+
     let processedRequestCount = 0;
     let skippedCount = 0;
     const totalTables = tables.length;
@@ -1501,9 +1504,9 @@ export class MetadataService {
       try {
         // 배치 번역 사용
         const totalColumns = table.columns.length;
-        const totalBatches = Math.ceil(totalColumns / this.COLUMN_BATCH_SIZE);
+        const totalBatches = Math.ceil(totalColumns / llmSettings.batchSize);
         
-        this.logger.log(`Translating table ${table.tableName}: ${totalColumns} columns in ${totalBatches} batches`);
+        this.logger.log(`Translating table ${table.tableName}: ${totalColumns} columns in ${totalBatches} batches (batchSize=${llmSettings.batchSize})`);
 
         let tableDescription: string | undefined;
         const allTranslatedColumns: any[] = [];
@@ -1511,8 +1514,8 @@ export class MetadataService {
 
         // 배치 단위로 번역 수행
         for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
-          const startIdx = batchIndex * this.COLUMN_BATCH_SIZE;
-          const endIdx = Math.min(startIdx + this.COLUMN_BATCH_SIZE, totalColumns);
+          const startIdx = batchIndex * llmSettings.batchSize;
+          const endIdx = Math.min(startIdx + llmSettings.batchSize, totalColumns);
           const batchColumns = table.columns.slice(startIdx, endIdx);
           
           const isFirstBatch = batchIndex === 0;
@@ -1523,7 +1526,8 @@ export class MetadataService {
               batchColumns,
               batchIndex,
               totalBatches,
-              isFirstBatch
+              isFirstBatch,
+              { tokensPerColumn: llmSettings.tokensPerColumn, maxTokensTranslation: llmSettings.maxTokensTranslation }
             );
 
             if (isFirstBatch && batchResult.tableDescription) {
@@ -1587,8 +1591,57 @@ export class MetadataService {
   // 단일 테이블 번역
   // ===========================================
   
-  // 배치 번역을 위한 상수
-  private readonly COLUMN_BATCH_SIZE = 50;
+  // LLM 설정 기본값
+  private readonly LLM_SETTINGS_DEFAULTS = {
+    llm_translation_batch_size: 50,
+    llm_tokens_per_column: 80,
+    llm_max_tokens_translation: 4000,
+  };
+
+  /**
+   * LLM 관련 시스템 설정 조회
+   */
+  private async getLLMSettings(): Promise<{
+    batchSize: number;
+    tokensPerColumn: number;
+    maxTokensTranslation: number;
+  }> {
+    try {
+      const settings = await this.prisma.systemSettings.findMany({
+        where: {
+          key: {
+            in: [
+              'llm_translation_batch_size',
+              'llm_tokens_per_column',
+              'llm_max_tokens_translation',
+            ],
+          },
+        },
+      });
+
+      const getValue = (key: string, defaultValue: number) => {
+        const setting = settings.find((s) => s.key === key);
+        if (setting?.value !== undefined) {
+          const val = typeof setting.value === 'number' ? setting.value : Number(setting.value);
+          return isNaN(val) ? defaultValue : val;
+        }
+        return defaultValue;
+      };
+
+      return {
+        batchSize: getValue('llm_translation_batch_size', this.LLM_SETTINGS_DEFAULTS.llm_translation_batch_size),
+        tokensPerColumn: getValue('llm_tokens_per_column', this.LLM_SETTINGS_DEFAULTS.llm_tokens_per_column),
+        maxTokensTranslation: getValue('llm_max_tokens_translation', this.LLM_SETTINGS_DEFAULTS.llm_max_tokens_translation),
+      };
+    } catch (error) {
+      this.logger.warn(`Failed to fetch LLM settings, using defaults: ${error.message}`);
+      return {
+        batchSize: this.LLM_SETTINGS_DEFAULTS.llm_translation_batch_size,
+        tokensPerColumn: this.LLM_SETTINGS_DEFAULTS.llm_tokens_per_column,
+        maxTokensTranslation: this.LLM_SETTINGS_DEFAULTS.llm_max_tokens_translation,
+      };
+    }
+  }
 
   /**
    * 컬럼 배치를 번역하는 헬퍼 메서드
@@ -1598,7 +1651,8 @@ export class MetadataService {
     columns: any[],
     batchIndex: number,
     totalBatches: number,
-    includeTableDescription: boolean
+    includeTableDescription: boolean,
+    llmSettings: { tokensPerColumn: number; maxTokensTranslation: number }
   ): Promise<{ tableDescription?: string; columns: any[] }> {
     const columnDetails = columns.map(c => {
       let info = `${c.columnName} (${c.dataType}`;
@@ -1664,8 +1718,11 @@ IMPORTANT: You MUST respond with ONLY a valid JSON object in this exact format, 
 Include ALL ${columns.length} columns in your response.`;
     }
 
-    // maxTokens를 컬럼 수에 맞게 동적으로 조정 (컬럼당 약 80토큰 + 버퍼)
-    const estimatedTokens = Math.min(4000, 500 + columns.length * 80);
+    // maxTokens를 컬럼 수에 맞게 동적으로 조정 (설정에서 가져온 값 사용)
+    const estimatedTokens = Math.min(
+      llmSettings.maxTokensTranslation,
+      500 + columns.length * llmSettings.tokensPerColumn
+    );
 
     const response = await this.llmService.generate({
       prompt,
@@ -1722,10 +1779,13 @@ Include ALL ${columns.length} columns in your response.`;
       throw new Error('테이블에 컬럼이 없습니다.');
     }
 
+    // LLM 설정 조회
+    const llmSettings = await this.getLLMSettings();
+
     const totalColumns = table.columns.length;
-    const totalBatches = Math.ceil(totalColumns / this.COLUMN_BATCH_SIZE);
+    const totalBatches = Math.ceil(totalColumns / llmSettings.batchSize);
     
-    this.logger.log(`Starting batch translation for table ${table.tableName}: ${totalColumns} columns in ${totalBatches} batches`);
+    this.logger.log(`Starting batch translation for table ${table.tableName}: ${totalColumns} columns in ${totalBatches} batches (batchSize=${llmSettings.batchSize})`);
 
     let tableDescription: string | undefined;
     const allTranslatedColumns: any[] = [];
@@ -1733,8 +1793,8 @@ Include ALL ${columns.length} columns in your response.`;
 
     // 배치 단위로 번역 수행
     for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
-      const startIdx = batchIndex * this.COLUMN_BATCH_SIZE;
-      const endIdx = Math.min(startIdx + this.COLUMN_BATCH_SIZE, totalColumns);
+      const startIdx = batchIndex * llmSettings.batchSize;
+      const endIdx = Math.min(startIdx + llmSettings.batchSize, totalColumns);
       const batchColumns = table.columns.slice(startIdx, endIdx);
       
       const isFirstBatch = batchIndex === 0;
@@ -1747,7 +1807,8 @@ Include ALL ${columns.length} columns in your response.`;
           batchColumns,
           batchIndex,
           totalBatches,
-          isFirstBatch
+          isFirstBatch,
+          { tokensPerColumn: llmSettings.tokensPerColumn, maxTokensTranslation: llmSettings.maxTokensTranslation }
         );
 
         if (isFirstBatch && batchResult.tableDescription) {

@@ -51,6 +51,24 @@ export class LLMService {
     private vllmProvider: VLLMProvider,
   ) {}
 
+  /**
+   * 시스템 설정에서 LLM maxTokens 값을 조회
+   */
+  private async getLLMMaxTokens(key: 'llm_max_tokens_default' | 'llm_max_tokens_sql', defaultValue: number): Promise<number> {
+    try {
+      const setting = await this.prisma.systemSettings.findUnique({
+        where: { key },
+      });
+      if (setting?.value !== undefined) {
+        const val = typeof setting.value === 'number' ? setting.value : Number(setting.value);
+        return isNaN(val) ? defaultValue : val;
+      }
+    } catch (e) {
+      this.logger.warn(`Failed to fetch LLM setting ${key}, using default: ${defaultValue}`);
+    }
+    return defaultValue;
+  }
+
   async generate(request: LLMRequest, providerId?: string): Promise<LLMResponse> {
     const provider = await this.getActiveProvider(providerId);
     const providerConfig = {
@@ -145,11 +163,12 @@ Rules:
 Database Schema:
 ${schemaContext}`;
 
+    const maxTokens = await this.getLLMMaxTokens('llm_max_tokens_sql', 2048);
     const response = await this.generate({
       prompt: naturalQuery,
       systemPrompt,
       temperature: 0.1,
-      maxTokens: 2048,
+      maxTokens,
     });
 
     return this.extractSQL(response.content);
@@ -177,11 +196,12 @@ Rules:
 Database Schema:
 ${schemaContext}`;
 
+    const maxTokens = await this.getLLMMaxTokens('llm_max_tokens_sql', 2048);
     const response = await this.generate({
       prompt: `Failed SQL:\n${invalidSql}\n\nError Message:\n${errorMessage}\n\nPlease provide the corrected SQL.`,
       systemPrompt,
       temperature: 0.1,
-      maxTokens: 2048,
+      maxTokens,
     });
 
     return this.extractSQL(response.content);

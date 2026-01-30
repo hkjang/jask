@@ -61,11 +61,13 @@ export class NL2SQLService {
     });
     const dbType = dataSource?.type || 'postgresql';
 
-    // Check if DDL is allowed
+    // Check if DDL is allowed and get LLM settings
     const sqlSettings = await this.prisma.systemSettings.findMany({
-      where: { key: { in: ['sql_allow_ddl', 'sql_allow_writes'] } }
+      where: { key: { in: ['sql_allow_ddl', 'sql_allow_writes', 'llm_max_tokens_default'] } }
     });
     const allowDDL = sqlSettings.find(s => s.key === 'sql_allow_ddl')?.value === true;
+    const llmMaxTokensSetting = sqlSettings.find(s => s.key === 'llm_max_tokens_default')?.value;
+    const llmMaxTokens = typeof llmMaxTokensSetting === 'number' ? llmMaxTokensSetting : 2048;
     
     // Determine Top K limit from configuration
     let topK = 10;
@@ -288,7 +290,7 @@ ${sampleQueryContext}`;
         prompt: promptWithHistory,
         systemPrompt: sqlSystemPrompt,
         temperature: 0.1,
-        maxTokens: 2048,
+        maxTokens: llmMaxTokens,
       });
 
       for await (const chunk of sqlStream) {
