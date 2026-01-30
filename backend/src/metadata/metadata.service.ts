@@ -966,8 +966,9 @@ export class MetadataService {
   async getSchemaContext(dataSourceId: string): Promise<string> {
     const tables = await this.prisma.tableMetadata.findMany({
       where: { dataSourceId, isExcluded: false },
-      include: { 
+      include: {
         columns: {
+          where: { isExcluded: false }, // AI 컨텍스트에서 제외된 컬럼 필터링
           include: {
             codeValueList: {
               where: { isActive: true },
@@ -1013,7 +1014,8 @@ export class MetadataService {
 
       context += 'Columns:\n';
       for (const col of table.columns) {
-        if (col.sensitivityLevel === SensitivityLevel.STRICT) continue; // Skip strict columns
+        // Skip excluded or strict sensitivity columns
+        if (col.isExcluded || col.sensitivityLevel === SensitivityLevel.STRICT) continue;
 
         context += `  - ${col.columnName}`;
         if (col.semanticName) context += ` ("${col.semanticName}")`;
@@ -1045,13 +1047,14 @@ export class MetadataService {
       // 2. Boost View Tables: Find views that may be relevant to the question
       const questionLower = question.toLowerCase();
       const viewTables = await this.prisma.tableMetadata.findMany({
-        where: { 
-          dataSourceId, 
+        where: {
+          dataSourceId,
           tableType: 'VIEW',
-          isExcluded: false 
+          isExcluded: false
         },
-        include: { 
+        include: {
           columns: {
+            where: { isExcluded: false }, // AI 컨텍스트에서 제외된 컬럼 필터링
             include: { codeValueList: { where: { isActive: true } } }
           }
         }
@@ -1104,13 +1107,14 @@ export class MetadataService {
         viewContext += '=== 기타 관련 스키마 ===\n\n';
       }
 
-      // 4. Perform Vector Search for remaining tables
+      // 4. Perform Vector Search for remaining tables (exclude tables marked as excluded)
       const results = await this.prisma.$queryRaw<any[]>`
-        SELECT t."tableName", s."content", 
+        SELECT t."tableName", s."content",
                (s."embedding" <=> ${vectorStr}::vector) as distance
         FROM "SchemaEmbedding" s
         JOIN "TableMetadata" t ON s."tableId" = t."id"
         WHERE t."dataSourceId" = ${dataSourceId}
+          AND t."isExcluded" = false
         ORDER BY distance ASC
         LIMIT ${limit * 2}
       `;
@@ -1270,7 +1274,11 @@ export class MetadataService {
   async getReviewableSchemaContext(dataSourceId: string, limit: number = 20): Promise<string> {
     const tables = await this.prisma.tableMetadata.findMany({
       where: { dataSourceId, isExcluded: false },
-      include: { columns: true },
+      include: {
+        columns: {
+          where: { isExcluded: false }, // AI 컨텍스트에서 제외된 컬럼 필터링
+        },
+      },
     });
 
     // Custom Sort: CRITICAL > HIGH > MEDIUM > LOW
@@ -1689,10 +1697,13 @@ export class MetadataService {
           }
         }
 
-        // 임베딩 생성
+        // 임베딩 생성 (제외된 컬럼은 임베딩에서 제외)
+        const excludedColumnNames = new Set(
+          table.columns.filter(c => c.isExcluded).map(c => c.columnName)
+        );
         const result = {
           tableDescription,
-          columns: allTranslatedColumns
+          columns: allTranslatedColumns.filter(c => !excludedColumnNames.has(c.columnName))
         };
         await this.generateTableEmbedding(table, result);
 
@@ -2073,10 +2084,13 @@ Include ALL ${columns.length} columns in your response.`;
       }
     }
 
-    // 임베딩 생성
+    // 임베딩 생성 (제외된 컬럼은 임베딩에서 제외)
+    const excludedColumnNames = new Set(
+      table.columns.filter(c => c.isExcluded).map(c => c.columnName)
+    );
     const result = {
       tableDescription,
-      columns: allTranslatedColumns
+      columns: allTranslatedColumns.filter(c => !excludedColumnNames.has(c.columnName))
     };
     await this.generateTableEmbedding(table, result);
 
@@ -2099,14 +2113,18 @@ Include ALL ${columns.length} columns in your response.`;
   async syncSingleTableWithAI(tableId: string) {
     const table = await this.prisma.tableMetadata.findUnique({
       where: { id: tableId },
-      include: { columns: true }
+      include: {
+        columns: {
+          where: { isExcluded: false }, // 임베딩에서 제외된 컬럼 필터링
+        },
+      },
     });
 
     if (!table) {
       throw new Error('테이블을 찾을 수 없습니다.');
     }
 
-    // 기존 메타데이터로 임베딩 재생성
+    // 기존 메타데이터로 임베딩 재생성 (제외된 컬럼은 이미 필터링됨)
     const result = {
       tableDescription: table.description,
       columns: table.columns.map(c => ({
