@@ -113,6 +113,31 @@ export class AdminService {
     });
   }
 
+  /**
+   * LLM 설정을 기본값으로 초기화
+   */
+  async resetLLMSettings() {
+    const llmDefaults = [
+      { key: 'llm_max_tokens_default', value: 2048, description: 'LLM 기본 최대 토큰 수' },
+      { key: 'llm_max_tokens_sql', value: 2048, description: 'SQL 생성/수정 시 최대 토큰 수' },
+      { key: 'llm_max_tokens_translation', value: 4000, description: '메타데이터 번역 시 최대 토큰 수' },
+      { key: 'llm_translation_batch_size', value: 50, description: '번역 시 배치당 컬럼 수' },
+      { key: 'llm_tokens_per_column', value: 80, description: '컬럼당 예상 토큰 수 (동적 토큰 계산용)' },
+    ];
+
+    const results = [];
+    for (const setting of llmDefaults) {
+      const result = await this.prisma.systemSettings.upsert({
+        where: { key: setting.key },
+        update: { value: setting.value, description: setting.description },
+        create: setting,
+      });
+      results.push(result);
+    }
+
+    return { message: 'LLM 설정이 기본값으로 초기화되었습니다.', count: results.length };
+  }
+
   // 사용자 관리
   async getUsers(page = 1, limit = 20) {
     const [items, total] = await Promise.all([

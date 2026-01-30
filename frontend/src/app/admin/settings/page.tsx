@@ -245,6 +245,27 @@ export default function AdminSettingsPage() {
     },
   });
 
+  // LLM 설정 초기화 Mutation
+  const resetLLMSettingsMutation = useMutation({
+    mutationFn: async () => {
+      const response = await fetch('/api/admin/settings/reset-llm', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${api.getToken()}`,
+        },
+      });
+      return response.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['adminSettings'] });
+      toast({ title: 'LLM 설정 초기화 완료', description: data.message });
+    },
+    onError: () => {
+      toast({ title: 'LLM 설정 초기화 실패', variant: 'destructive' });
+    },
+  });
+
   // User Mutations
   const userMutation = useMutation({
     mutationFn: async ({ userId, action, data }: { userId: string; action: 'role' | 'toggle'; data?: any }) => {
@@ -719,19 +740,29 @@ export default function AdminSettingsPage() {
                 <h2 className="text-xl font-semibold">시스템 설정</h2>
                 <p className="text-sm text-muted-foreground">서비스 동작 설정을 관리합니다</p>
               </div>
-              <Dialog open={isSettingDialogOpen} onOpenChange={(open) => {
-                setIsSettingDialogOpen(open);
-                if (!open) {
-                  setSettingForm({ key: '', value: '', description: '' });
-                  setEditingSettingKey(null);
-                }
-              }}>
-                <DialogTrigger asChild>
-                  <Button>
-                    <Plus className="h-4 w-4 mr-2" />
-                    설정 추가
-                  </Button>
-                </DialogTrigger>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => resetLLMSettingsMutation.mutate()}
+                  disabled={resetLLMSettingsMutation.isPending}
+                >
+                  {resetLLMSettingsMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                  <RotateCcw className="h-4 w-4 mr-2" />
+                  LLM 설정 초기화
+                </Button>
+                <Dialog open={isSettingDialogOpen} onOpenChange={(open) => {
+                  setIsSettingDialogOpen(open);
+                  if (!open) {
+                    setSettingForm({ key: '', value: '', description: '' });
+                    setEditingSettingKey(null);
+                  }
+                }}>
+                  <DialogTrigger asChild>
+                    <Button>
+                      <Plus className="h-4 w-4 mr-2" />
+                      설정 추가
+                    </Button>
+                  </DialogTrigger>
                 <DialogContent>
                   <DialogHeader>
                     <DialogTitle>{editingSettingKey ? '설정 수정' : '새 설정 추가'}</DialogTitle>
@@ -774,6 +805,7 @@ export default function AdminSettingsPage() {
                   </DialogFooter>
                 </DialogContent>
               </Dialog>
+              </div>
             </div>
 
             {/* Available Settings Reference */}

@@ -74,6 +74,12 @@ export class AdminController {
     return this.adminService.updateSetting(key, body.value, body.description);
   }
 
+  @Post('settings/reset-llm')
+  @ApiOperation({ summary: 'LLM 설정 초기화 (기본값 복원)' })
+  resetLLMSettings() {
+    return this.adminService.resetLLMSettings();
+  }
+
   // 사용자 관리
   @Get('users')
   @ApiOperation({ summary: '사용자 목록' })
