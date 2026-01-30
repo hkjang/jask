@@ -140,7 +140,7 @@ export default function EmbeddingManagementPage() {
 
   const { data: itemsData, isLoading: itemsLoading } = useQuery({
     queryKey: ['embeddableItems', selectedType],
-    queryFn: () => api.getEmbeddableItems({ limit: 50, type: selectedType }),
+    queryFn: () => api.getEmbeddableItems({ limit: 50, type: selectedType as 'TABLE' | 'COLUMN' | 'SAMPLE_QUERY' | 'DOCUMENT' | 'CUSTOM' }),
   });
 
   const { data: dataSources = [] } = useQuery({

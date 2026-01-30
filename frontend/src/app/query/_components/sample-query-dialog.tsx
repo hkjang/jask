@@ -15,6 +15,14 @@ interface SampleQueryDialogProps {
   onUseQuery?: (sql: string) => void;
 }
 
+interface SampleQueryData {
+  content: string;
+  metadata?: {
+    sql?: string;
+    message?: string;
+  };
+}
+
 export function SampleQueryDialog({ id, open, onOpenChange, onUseQuery }: SampleQueryDialogProps) {
   const { toast } = useToast();
   const [copied, setCopied] = useState(false);
@@ -24,7 +32,7 @@ export function SampleQueryDialog({ id, open, onOpenChange, onUseQuery }: Sample
     queryFn: async () => {
       if (!id) return null;
       // Fetching from EmbeddableItem endpoint
-      const res = await api.get(`/embedding/items/${id}`);
+      const res = await api.get<SampleQueryData>(`/embedding/items/${id}`);
       return res;
     },
     enabled: !!id && open,

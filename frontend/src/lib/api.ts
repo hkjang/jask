@@ -228,7 +228,7 @@ class ApiClient {
 
   // 전체 테이블 품질 점수 재계산
   async recalculateAllScores(dataSourceId: string) {
-    return this.request(`/metadata/recalculate-scores/${dataSourceId}`, { method: 'POST' });
+    return this.request<{ processed: number }>(`/metadata/recalculate-scores/${dataSourceId}`, { method: 'POST' });
   }
 
   // 테이블 인덱스 조회
@@ -647,9 +647,7 @@ class ApiClient {
     return this.request<{ context: string }>(`/metadata/schema/${dataSourceId}`);
   }
 
-  async getTables(dataSourceId: string) {
-    return this.request<any[]>(`/metadata/tables/${dataSourceId}`);
-  }
+
 
   async getTableInfoByName(dataSourceId: string, tableName: string) {
     const params = new URLSearchParams({ dataSourceId, tableName });
