@@ -33,7 +33,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
-import { Loader2, CheckCircle, Languages, AlertCircle, MinusCircle, RefreshCw, EyeOff, Eye as EyeIcon } from "lucide-react";
+import { Loader2, CheckCircle, Languages, AlertCircle, MinusCircle, RefreshCw, EyeOff, Eye as EyeIcon, BarChart3 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface MetadataSidebarProps {
@@ -184,6 +184,24 @@ export function MetadataSidebar({
       router.push('/datasources');
   };
 
+  // 전체 점수 새로고침
+  const handleRecalculateScores = async (ds: any) => {
+    try {
+      toast({ title: "점수 계산 시작됨", description: "전체 테이블의 품질 점수를 재계산 중입니다..." });
+      const result = await api.recalculateAllScores(ds.id);
+      toast({
+        title: "점수 계산 완료",
+        description: `${result.processed}개 테이블의 점수가 재계산되었습니다.`
+      });
+      onRefreshDataSources();
+      if (selectedDataSource?.id === ds.id) {
+        onSelectDataSource(ds);
+      }
+    } catch (e: any) {
+      toast({ title: "점수 계산 실패", description: e.message, variant: "destructive" });
+    }
+  };
+
   // 테이블 단일 번역
   const handleTranslateTable = async (table: any) => {
     try {
@@ -272,6 +290,10 @@ export function MetadataSidebar({
                           <DropdownMenuItem onClick={() => handleTranslateMetadata(ds, true)}>
                               <Languages className="h-3 w-3 mr-2" /> 미수행만 번역 (AI)
                           </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => handleRecalculateScores(ds)}>
+                              <BarChart3 className="h-3 w-3 mr-2" /> 점수 새로고침
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
                          <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => confirmDeleteClick(ds)}>
                              <Trash2 className="h-3 w-3 mr-2" /> Delete
                          </DropdownMenuItem>

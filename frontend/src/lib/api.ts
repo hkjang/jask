@@ -226,6 +226,16 @@ class ApiClient {
     });
   }
 
+  // 전체 테이블 품질 점수 재계산
+  async recalculateAllScores(dataSourceId: string) {
+    return this.request(`/metadata/recalculate-scores/${dataSourceId}`, { method: 'POST' });
+  }
+
+  // 테이블 인덱스 조회
+  async getTableIndexes(tableId: string) {
+    return this.request<any[]>(`/metadata/table/${tableId}/indexes`);
+  }
+
   // NL2SQL
   async generateQuery(dataSourceId: string, question: string, autoExecute = false, threadId?: string) {
     return this.request('/nl2sql/generate', {

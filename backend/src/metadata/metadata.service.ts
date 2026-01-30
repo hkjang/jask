@@ -37,6 +37,14 @@ interface ColumnInfo {
   description?: string;
 }
 
+interface IndexInfo {
+  indexName: string;
+  columnNames: string[];
+  isUnique: boolean;
+  isPrimary: boolean;
+  indexType?: string;
+}
+
 @Injectable()
 export class MetadataService {
   private readonly logger = new Logger(MetadataService.name);
@@ -49,25 +57,29 @@ export class MetadataService {
     private embeddingService: EmbeddingService,
   ) {}
 
-  async syncMetadata(dataSourceId: string): Promise<{ tables: number; columns: number }> {
+  async syncMetadata(dataSourceId: string): Promise<{ tables: number; columns: number; indexes: number }> {
     const dataSource = await this.dataSourcesService.findOne(dataSourceId);
     const { client, type } = await this.dataSourcesService.getConnection(dataSourceId);
 
     let tables: TableInfo[] = [];
     let allColumns: Map<string, ColumnInfo[]> = new Map();
+    let allIndexes: Map<string, IndexInfo[]> = new Map();
 
     if (type === 'postgresql' || dataSource.type === 'postgresql') {
       const result = await this.syncPostgreSQLMetadata(client as PgClient, dataSource.schema || 'public');
       tables = result.tables;
       allColumns = result.columns;
+      allIndexes = result.indexes || new Map();
     } else if (type === 'mysql' || dataSource.type === 'mysql') {
       const result = await this.syncMySQLMetadata(client as mysql.Connection, dataSource.database);
       tables = result.tables;
       allColumns = result.columns;
+      allIndexes = result.indexes || new Map();
     } else if (type === 'oracle' || dataSource.type === 'oracle') {
       const result = await this.syncOracleMetadata(client as oracledb.Connection, dataSource.schema || dataSource.username?.toUpperCase());
       tables = result.tables;
       allColumns = result.columns;
+      allIndexes = result.indexes || new Map();
     }
 
     // 테이블 저장
@@ -134,6 +146,33 @@ export class MetadataService {
       }
 
 
+      // 인덱스 저장
+      const indexes = allIndexes.get(`${table.schemaName}.${table.tableName}`) || [];
+      for (const idx of indexes) {
+        await this.prisma.indexMetadata.upsert({
+          where: {
+            tableId_indexName: {
+              tableId: savedTable.id,
+              indexName: idx.indexName,
+            },
+          },
+          update: {
+            columnNames: idx.columnNames,
+            isUnique: idx.isUnique,
+            isPrimary: idx.isPrimary,
+            indexType: idx.indexType,
+          },
+          create: {
+            tableId: savedTable.id,
+            indexName: idx.indexName,
+            columnNames: idx.columnNames,
+            isUnique: idx.isUnique,
+            isPrimary: idx.isPrimary,
+            indexType: idx.indexType,
+          },
+        });
+      }
+
       // 임베딩 자동 동기화 (비동기로 실행하여 응답 속도 저하 방지)
       this.embeddingService.syncTableEmbedding(savedTable.id).catch(err => {
         this.logger.warn(`Failed to sync embedding for table ${savedTable.tableName}: ${err.message}`);
@@ -141,7 +180,8 @@ export class MetadataService {
     }
 
     const totalColumns = Array.from(allColumns.values()).reduce((sum, cols) => sum + cols.length, 0);
-    return { tables: tables.length, columns: totalColumns };
+    const totalIndexes = Array.from(allIndexes.values()).reduce((sum, idxs) => sum + idxs.length, 0);
+    return { tables: tables.length, columns: totalColumns, indexes: totalIndexes };
   }
 
   private async syncPostgreSQLMetadata(client: PgClient, schema: string) {
@@ -213,7 +253,54 @@ export class MetadataService {
       });
     }
 
-    return { tables, columns };
+    // 인덱스 정보 조회
+    const indexesResult = await client.query(`
+      SELECT
+        schemaname as schema_name,
+        tablename as table_name,
+        indexname as index_name,
+        indexdef as index_def
+      FROM pg_indexes
+      WHERE schemaname = $1
+      ORDER BY tablename, indexname
+    `, [schema]);
+
+    const indexes = new Map<string, IndexInfo[]>();
+    for (const row of indexesResult.rows) {
+      const key = `${row.schema_name}.${row.table_name}`;
+      if (!indexes.has(key)) {
+        indexes.set(key, []);
+      }
+
+      // indexdef에서 컬럼명 추출
+      const indexDef = row.index_def || '';
+      const isPrimary = row.index_name.endsWith('_pkey') || indexDef.toLowerCase().includes('primary key');
+      const isUnique = indexDef.toLowerCase().includes('unique') || isPrimary;
+
+      // 컬럼명 추출 (예: CREATE INDEX idx ON table (col1, col2))
+      const columnMatch = indexDef.match(/\(([^)]+)\)/);
+      let columnNames: string[] = [];
+      if (columnMatch) {
+        columnNames = columnMatch[1].split(',').map((c: string) => c.trim().replace(/"/g, ''));
+      }
+
+      // 인덱스 타입 추출
+      let indexType = 'BTREE';
+      if (indexDef.toLowerCase().includes('using gin')) indexType = 'GIN';
+      else if (indexDef.toLowerCase().includes('using gist')) indexType = 'GIST';
+      else if (indexDef.toLowerCase().includes('using hash')) indexType = 'HASH';
+      else if (indexDef.toLowerCase().includes('using brin')) indexType = 'BRIN';
+
+      indexes.get(key)!.push({
+        indexName: row.index_name,
+        columnNames,
+        isUnique,
+        isPrimary,
+        indexType,
+      });
+    }
+
+    return { tables, columns, indexes };
   }
 
   private async syncMySQLMetadata(client: mysql.Connection, database: string) {
@@ -275,7 +362,56 @@ export class MetadataService {
       });
     }
 
-    return { tables, columns };
+    // 인덱스 정보 조회
+    const [indexesRows] = await client.query(`
+      SELECT
+        TABLE_SCHEMA as table_schema,
+        TABLE_NAME as table_name,
+        INDEX_NAME as index_name,
+        NON_UNIQUE as non_unique,
+        COLUMN_NAME as column_name,
+        SEQ_IN_INDEX as seq_in_index,
+        INDEX_TYPE as index_type
+      FROM information_schema.STATISTICS
+      WHERE TABLE_SCHEMA = ?
+      ORDER BY TABLE_NAME, INDEX_NAME, SEQ_IN_INDEX
+    `, [database]) as any;
+
+    const indexes = new Map<string, IndexInfo[]>();
+    const indexMap = new Map<string, { columns: string[], isUnique: boolean, isPrimary: boolean, indexType: string }>();
+
+    for (const row of indexesRows) {
+      const key = `${row.table_schema}.${row.table_name}`;
+      const indexKey = `${key}.${row.index_name}`;
+
+      if (!indexMap.has(indexKey)) {
+        indexMap.set(indexKey, {
+          columns: [],
+          isUnique: row.non_unique === 0,
+          isPrimary: row.index_name === 'PRIMARY',
+          indexType: row.index_type || 'BTREE'
+        });
+      }
+      indexMap.get(indexKey)!.columns.push(row.column_name);
+    }
+
+    for (const [indexKey, data] of indexMap.entries()) {
+      const [schema, tableName, indexName] = indexKey.split('.');
+      const key = `${schema}.${tableName}`;
+
+      if (!indexes.has(key)) {
+        indexes.set(key, []);
+      }
+      indexes.get(key)!.push({
+        indexName,
+        columnNames: data.columns,
+        isUnique: data.isUnique,
+        isPrimary: data.isPrimary,
+        indexType: data.indexType,
+      });
+    }
+
+    return { tables, columns, indexes };
   }
 
   private async syncOracleMetadata(client: oracledb.Connection, schema: string) {
@@ -385,7 +521,63 @@ export class MetadataService {
       });
     }
 
-    return { tables, columns };
+    // 인덱스 정보 조회
+    const indexesResult = await client.execute(
+      `SELECT
+         i.TABLE_NAME,
+         i.INDEX_NAME,
+         i.UNIQUENESS,
+         ic.COLUMN_NAME,
+         ic.COLUMN_POSITION,
+         i.INDEX_TYPE,
+         CASE WHEN c.CONSTRAINT_TYPE = 'P' THEN 'Y' ELSE 'N' END as IS_PRIMARY
+       FROM ALL_INDEXES i
+       JOIN ALL_IND_COLUMNS ic ON i.OWNER = ic.INDEX_OWNER AND i.INDEX_NAME = ic.INDEX_NAME
+       LEFT JOIN ALL_CONSTRAINTS c ON i.INDEX_NAME = c.INDEX_NAME AND i.OWNER = c.OWNER AND c.CONSTRAINT_TYPE = 'P'
+       WHERE i.OWNER = :schema AND i.TABLE_OWNER = :schema
+       ORDER BY i.TABLE_NAME, i.INDEX_NAME, ic.COLUMN_POSITION`,
+      { schema: normalizedSchema },
+      { outFormat: oracledb.OUT_FORMAT_OBJECT }
+    );
+
+    const indexes = new Map<string, IndexInfo[]>();
+    const indexMap = new Map<string, { columns: string[], isUnique: boolean, isPrimary: boolean, indexType: string }>();
+
+    for (const row of (indexesResult.rows || []) as any[]) {
+      const key = `${normalizedSchema}.${row.TABLE_NAME}`;
+      const indexKey = `${key}.${row.INDEX_NAME}`;
+
+      if (!indexMap.has(indexKey)) {
+        indexMap.set(indexKey, {
+          columns: [],
+          isUnique: row.UNIQUENESS === 'UNIQUE',
+          isPrimary: row.IS_PRIMARY === 'Y',
+          indexType: row.INDEX_TYPE || 'NORMAL'
+        });
+      }
+      indexMap.get(indexKey)!.columns.push(row.COLUMN_NAME);
+    }
+
+    for (const [indexKey, data] of indexMap.entries()) {
+      const parts = indexKey.split('.');
+      const indexName = parts.pop()!;
+      const tableName = parts.pop()!;
+      const schemaName = parts.join('.');
+      const key = `${schemaName}.${tableName}`;
+
+      if (!indexes.has(key)) {
+        indexes.set(key, []);
+      }
+      indexes.get(key)!.push({
+        indexName,
+        columnNames: data.columns,
+        isUnique: data.isUnique,
+        isPrimary: data.isPrimary,
+        indexType: data.indexType,
+      });
+    }
+
+    return { tables, columns, indexes };
   }
 
   async getTables(dataSourceId: string) {
@@ -745,6 +937,30 @@ export class MetadataService {
     });
 
     return { score, status: result.metadataStatus, details: { earnedPoints, totalPoints } };
+  }
+
+  // 전체 테이블 품질 점수 재계산
+  async recalculateAllScores(dataSourceId: string) {
+    const tables = await this.prisma.tableMetadata.findMany({
+      where: { dataSourceId },
+      select: { id: true, tableName: true }
+    });
+
+    let processed = 0;
+    let failed = 0;
+
+    for (const table of tables) {
+      try {
+        await this.calculateAndSaveQualityScore(table.id);
+        processed++;
+        this.logger.log(`Recalculated score for table ${table.tableName}`);
+      } catch (error) {
+        failed++;
+        this.logger.error(`Failed to recalculate score for table ${table.tableName}: ${error.message}`);
+      }
+    }
+
+    return { success: true, processed, failed, total: tables.length };
   }
 
   async getSchemaContext(dataSourceId: string): Promise<string> {
@@ -1188,6 +1404,21 @@ export class MetadataService {
 
   async deleteRelationship(id: string) {
     return this.prisma.tableRelationship.delete({ where: { id } });
+  }
+
+  // ===========================================
+  // 인덱스 관련 메서드
+  // ===========================================
+
+  async getTableIndexes(tableId: string) {
+    return this.prisma.indexMetadata.findMany({
+      where: { tableId },
+      orderBy: [
+        { isPrimary: 'desc' },
+        { isUnique: 'desc' },
+        { indexName: 'asc' }
+      ]
+    });
   }
 
   async updateTableDescription(tableId: string, description: string) {

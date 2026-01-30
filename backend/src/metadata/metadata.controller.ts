@@ -78,6 +78,12 @@ export class MetadataController {
     return this.metadataService.setTableExcluded(tableId, body.isExcluded);
   }
 
+  @Post('recalculate-scores/:dataSourceId')
+  @ApiOperation({ summary: '전체 테이블 품질 점수 재계산' })
+  async recalculateAllScores(@Param('dataSourceId') dataSourceId: string) {
+    return this.metadataService.recalculateAllScores(dataSourceId);
+  }
+
   @Get('schema/:dataSourceId')
   @ApiOperation({ summary: '스키마 컨텍스트 조회' })
   async getSchemaContext(@Param('dataSourceId') dataSourceId: string) {
@@ -179,6 +185,14 @@ export class MetadataController {
   @ApiOperation({ summary: '관계 삭제' })
   async deleteRelationship(@Param('relationshipId') relationshipId: string) {
     return this.metadataService.deleteRelationship(relationshipId);
+  }
+
+  // --- Indexes ---
+
+  @Get('table/:tableId/indexes')
+  @ApiOperation({ summary: '테이블 인덱스 조회' })
+  async getTableIndexes(@Param('tableId') tableId: string) {
+    return this.metadataService.getTableIndexes(tableId);
   }
 
   // --- Column Exclusion & Deletion ---
