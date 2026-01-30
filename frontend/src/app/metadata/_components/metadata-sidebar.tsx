@@ -33,7 +33,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
-import { Loader2, CheckCircle, Languages, AlertCircle, MinusCircle, RefreshCw, EyeOff, Eye as EyeIcon, BarChart3 } from "lucide-react";
+import { Loader2, CheckCircle, Languages, AlertCircle, MinusCircle, RefreshCw, EyeOff, Eye as EyeIcon, BarChart3, FilterX } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface MetadataSidebarProps {
@@ -202,6 +202,30 @@ export function MetadataSidebar({
     }
   };
 
+  // 제외 설정 일괄 반영
+  const handleSyncExcludedItems = async (ds: any) => {
+    try {
+      toast({ title: "반영 시작됨", description: "제외 설정을 임베딩에 반영 중입니다..." });
+      const result = await api.syncExcludedItems(ds.id);
+      const messages = [];
+      if (result.deletedTables > 0) messages.push(`${result.deletedTables}개 테이블 임베딩 삭제`);
+      if (result.updatedTables > 0) messages.push(`${result.updatedTables}개 테이블 임베딩 갱신`);
+      if (result.errors?.length > 0) messages.push(`${result.errors.length}개 오류 발생`);
+
+      toast({
+        title: "제외 설정 반영 완료",
+        description: messages.length > 0 ? messages.join(', ') : "변경 사항이 없습니다.",
+        variant: result.errors?.length > 0 ? "destructive" : "default"
+      });
+      onRefreshDataSources();
+      if (selectedDataSource?.id === ds.id) {
+        onSelectDataSource(ds);
+      }
+    } catch (e: any) {
+      toast({ title: "반영 실패", description: e.message, variant: "destructive" });
+    }
+  };
+
   // 테이블 단일 번역
   const handleTranslateTable = async (table: any) => {
     try {
@@ -292,6 +316,9 @@ export function MetadataSidebar({
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => handleRecalculateScores(ds)}>
                               <BarChart3 className="h-3 w-3 mr-2" /> 점수 새로고침
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => handleSyncExcludedItems(ds)}>
+                              <FilterX className="h-3 w-3 mr-2" /> 제외 설정 일괄 반영
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
                          <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => confirmDeleteClick(ds)}>

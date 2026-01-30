@@ -212,6 +212,12 @@ export class MetadataController {
     return this.metadataService.setColumnExcluded(columnId, body.isExcluded);
   }
 
+  @Post(':dataSourceId/sync-excluded')
+  @ApiOperation({ summary: '제외 설정 일괄 반영 (임베딩 갱신)' })
+  async syncExcludedItems(@Param('dataSourceId') dataSourceId: string) {
+    return this.metadataService.syncExcludedItems(dataSourceId);
+  }
+
   @Delete('column/:columnId')
   @ApiOperation({ summary: '컬럼 삭제' })
   async deleteColumn(@Param('columnId') columnId: string) {

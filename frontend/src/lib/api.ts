@@ -231,6 +231,14 @@ class ApiClient {
     return this.request<{ processed: number }>(`/metadata/recalculate-scores/${dataSourceId}`, { method: 'POST' });
   }
 
+  // 제외 설정 일괄 반영 (임베딩 갱신)
+  async syncExcludedItems(dataSourceId: string) {
+    return this.request<{ deletedTables: number; updatedTables: number; errors: string[] }>(
+      `/metadata/${dataSourceId}/sync-excluded`,
+      { method: 'POST' }
+    );
+  }
+
   // 테이블 인덱스 조회
   async getTableIndexes(tableId: string) {
     return this.request<any[]>(`/metadata/table/${tableId}/indexes`);
