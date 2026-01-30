@@ -1149,6 +1149,74 @@ export default function EmbeddingManagementPage() {
 
             {selectedItem && (
               <div className="space-y-6">
+                {/* 기본 정보 카드 */}
+                {selectedItem.metadata && (
+                  <div className="p-4 border rounded-lg bg-muted/30 space-y-2">
+                    <h4 className="text-sm font-semibold text-muted-foreground mb-3">기본 정보</h4>
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      {selectedItem.metadata.tableName && (
+                        <div className="flex items-center gap-2">
+                          <span className="text-muted-foreground">테이블명:</span>
+                          <span className="font-medium">{selectedItem.metadata.tableName}</span>
+                        </div>
+                      )}
+                      {selectedItem.metadata.schemaName && (
+                        <div className="flex items-center gap-2">
+                          <span className="text-muted-foreground">스키마:</span>
+                          <span className="font-medium">{selectedItem.metadata.schemaName}</span>
+                        </div>
+                      )}
+                      {selectedItem.metadata.tableType && (
+                        <div className="flex items-center gap-2">
+                          <span className="text-muted-foreground">타입:</span>
+                          <Badge variant="outline">{selectedItem.metadata.tableType}</Badge>
+                        </div>
+                      )}
+                      {selectedItem.metadata.columnName && (
+                        <div className="flex items-center gap-2">
+                          <span className="text-muted-foreground">컬럼명:</span>
+                          <span className="font-medium">{selectedItem.metadata.columnName}</span>
+                        </div>
+                      )}
+                      {selectedItem.metadata.dataType && (
+                        <div className="flex items-center gap-2">
+                          <span className="text-muted-foreground">데이터 타입:</span>
+                          <code className="px-1.5 py-0.5 bg-muted rounded text-xs">{selectedItem.metadata.dataType}</code>
+                        </div>
+                      )}
+                      {/* 샘플 쿼리 메타데이터 */}
+                      {selectedItem.metadata.question && (
+                        <div className="col-span-2 flex items-start gap-2">
+                          <span className="text-muted-foreground whitespace-nowrap">질문:</span>
+                          <span className="font-medium">{selectedItem.metadata.question}</span>
+                        </div>
+                      )}
+                      {selectedItem.metadata.description && (
+                        <div className="col-span-2 flex items-start gap-2">
+                          <span className="text-muted-foreground whitespace-nowrap">설명:</span>
+                          <span className="">{selectedItem.metadata.description}</span>
+                        </div>
+                      )}
+                      {selectedItem.metadata.sql && (
+                        <div className="col-span-2 space-y-1">
+                          <span className="text-muted-foreground">SQL:</span>
+                          <pre className="p-2 bg-slate-900 text-slate-100 rounded text-xs overflow-x-auto whitespace-pre-wrap">
+                            {selectedItem.metadata.sql}
+                          </pre>
+                        </div>
+                      )}
+                      {selectedItem.metadata.tags && selectedItem.metadata.tags.length > 0 && (
+                        <div className="col-span-2 flex items-center gap-2 flex-wrap">
+                          <span className="text-muted-foreground">태그:</span>
+                          {selectedItem.metadata.tags.map((tag: string, idx: number) => (
+                            <Badge key={idx} variant="secondary">{tag}</Badge>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex items-center gap-4 p-4 border rounded-lg bg-background">
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-medium">상태:</span>
@@ -1210,26 +1278,18 @@ export default function EmbeddingManagementPage() {
                   </div>
                 )}
 
+                {/* 임베딩 콘텐츠 - 원본 텍스트 그대로 표시 */}
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">전체 콘텐츠</label>
-                  <div className="p-4 bg-muted rounded-md whitespace-pre-wrap text-sm max-h-[300px] overflow-y-auto font-mono">
+                  <label className="text-sm font-medium">임베딩 콘텐츠</label>
+                  <div className="p-4 bg-muted rounded-md whitespace-pre-wrap text-sm max-h-[400px] overflow-y-auto">
                     {selectedItem.content}
                   </div>
                 </div>
 
-                {selectedItem.metadata && Object.keys(selectedItem.metadata).length > 0 && (
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">메타데이터</label>
-                    <div className="p-4 bg-slate-950 text-slate-50 rounded-md whitespace-pre overflow-x-auto text-xs font-mono">
-                      {JSON.stringify(selectedItem.metadata, null, 2)}
-                    </div>
-                  </div>
-                )}
-                
-                <div className="text-xs text-muted-foreground grid grid-cols-2 gap-2">
-                    {selectedItem.tokenCount !== undefined && <span>Token Count: {selectedItem.tokenCount}</span>}
-                    {selectedItem.lastEmbeddedAt && <span>Last Embedded: {selectedItem.lastEmbeddedAt}</span>}
-                    {selectedItem.dataSourceId && <span>DataSource: {selectedItem.dataSourceId}</span>}
+                <div className="text-xs text-muted-foreground grid grid-cols-2 gap-2 p-3 bg-muted/20 rounded-lg">
+                    {selectedItem.tokenCount !== undefined && <span>토큰 수: {selectedItem.tokenCount}</span>}
+                    {selectedItem.lastEmbeddedAt && <span>마지막 임베딩: {new Date(selectedItem.lastEmbeddedAt).toLocaleString('ko-KR')}</span>}
+                    {selectedItem.dataSourceId && <span>데이터소스 ID: {selectedItem.dataSourceId}</span>}
                 </div>
               </div>
             )}
