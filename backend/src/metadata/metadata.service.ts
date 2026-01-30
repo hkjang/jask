@@ -1498,23 +1498,125 @@ export class MetadataService {
         }
       }
 
-      // Build detailed column info including data types
-      const columnDetails = table.columns.map(c => {
-        let info = `${c.columnName} (${c.dataType}`;
-        if (c.isNullable === false) info += ', NOT NULL';
-        if (c.isPrimaryKey) info += ', PK';
-        if (c.isForeignKey) info += `, FK -> ${c.referencedTable}.${c.referencedColumn}`;
-        if (c.description) info += `, desc: ${c.description}`;
-        info += ')';
-        return info;
-      }).join('\n  - ');
+      try {
+        // 배치 번역 사용
+        const totalColumns = table.columns.length;
+        const totalBatches = Math.ceil(totalColumns / this.COLUMN_BATCH_SIZE);
+        
+        this.logger.log(`Translating table ${table.tableName}: ${totalColumns} columns in ${totalBatches} batches`);
 
-      // Logic to translate table and columns
-      const prompt = `You are a database metadata expert. Analyze the following table schema and provide Korean semantic names (business terms) and descriptions.
+        let tableDescription: string | undefined;
+        const allTranslatedColumns: any[] = [];
+        let failedBatches = 0;
+
+        // 배치 단위로 번역 수행
+        for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
+          const startIdx = batchIndex * this.COLUMN_BATCH_SIZE;
+          const endIdx = Math.min(startIdx + this.COLUMN_BATCH_SIZE, totalColumns);
+          const batchColumns = table.columns.slice(startIdx, endIdx);
+          
+          const isFirstBatch = batchIndex === 0;
+
+          try {
+            const batchResult = await this.translateColumnBatch(
+              table,
+              batchColumns,
+              batchIndex,
+              totalBatches,
+              isFirstBatch
+            );
+
+            if (isFirstBatch && batchResult.tableDescription) {
+              tableDescription = batchResult.tableDescription;
+            }
+
+            allTranslatedColumns.push(...batchResult.columns);
+          } catch (batchError) {
+            this.logger.error(`Batch ${batchIndex + 1}/${totalBatches} failed for table ${table.tableName}: ${batchError.message}`);
+            failedBatches++;
+          }
+        }
+
+        // 모든 배치가 실패한 경우 건너뛰기
+        if (failedBatches === totalBatches) {
+          this.logger.error(`All batches failed for table ${table.tableName}`);
+          continue;
+        }
+
+        // 결과 저장
+        if (tableDescription) {
+          await this.prisma.tableMetadata.update({
+            where: { id: table.id },
+            data: { description: tableDescription }
+          });
+        }
+
+        // 컬럼 업데이트
+        for (const colResult of allTranslatedColumns) {
+          const column = table.columns.find(c => c.columnName === colResult.columnName);
+          if (column) {
+            await this.prisma.columnMetadata.update({
+              where: { id: column.id },
+              data: {
+                semanticName: colResult.semanticName,
+                description: colResult.description
+              }
+            });
+          }
+        }
+
+        // 임베딩 생성
+        const result = {
+          tableDescription,
+          columns: allTranslatedColumns
+        };
+        await this.generateTableEmbedding(table, result);
+
+        processedRequestCount++;
+        this.logger.log(`Translated metadata for table ${table.tableName} (${processedRequestCount}/${totalTables}): ${allTranslatedColumns.length}/${totalColumns} columns`);
+      } catch (error) {
+        this.logger.error(`Failed to translate metadata for table ${table.tableName}: ${error.message}`);
+      }
+    }
+
+    return { success: true, processed: processedRequestCount, skipped: skippedCount, total: totalTables };
+  }
+
+
+  // ===========================================
+  // 단일 테이블 번역
+  // ===========================================
+  
+  // 배치 번역을 위한 상수
+  private readonly COLUMN_BATCH_SIZE = 50;
+
+  /**
+   * 컬럼 배치를 번역하는 헬퍼 메서드
+   */
+  private async translateColumnBatch(
+    table: { tableName: string; schemaName: string },
+    columns: any[],
+    batchIndex: number,
+    totalBatches: number,
+    includeTableDescription: boolean
+  ): Promise<{ tableDescription?: string; columns: any[] }> {
+    const columnDetails = columns.map(c => {
+      let info = `${c.columnName} (${c.dataType}`;
+      if (c.isNullable === false) info += ', NOT NULL';
+      if (c.isPrimaryKey) info += ', PK';
+      if (c.isForeignKey) info += `, FK -> ${c.referencedTable}.${c.referencedColumn}`;
+      if (c.description) info += `, desc: ${c.description}`;
+      info += ')';
+      return info;
+    }).join('\n  - ');
+
+    let prompt: string;
+    if (includeTableDescription) {
+      prompt = `You are a database metadata expert. Analyze the following table schema and provide Korean semantic names (business terms) and descriptions.
 
 Table Name: ${table.tableName}
 Schema: ${table.schemaName}
-Columns:
+Columns (batch ${batchIndex + 1}/${totalBatches}):
   - ${columnDetails}
 
 Your task:
@@ -1528,168 +1630,84 @@ IMPORTANT: You MUST respond with ONLY a valid JSON object in this exact format, 
   "tableDescription": "테이블 설명",
   "columns": [
     {
-      "columnName": "${table.columns[0]?.columnName || 'column_name'}",
+      "columnName": "${columns[0]?.columnName || 'column_name'}",
       "semanticName": "한글 의미명",
       "description": "한글 설명"
     }
   ]
 }
 
-Include ALL ${table.columns.length} columns in your response.`;
+Include ALL ${columns.length} columns in your response.`;
+    } else {
+      prompt = `You are a database metadata expert. Provide Korean semantic names and descriptions for the following columns.
 
-      try {
-        const response = await this.llmService.generate({
-          prompt,
-          systemPrompt: 'You are a helpful data assistant. Output valid JSON only.',
-          temperature: 0.1,
-          maxTokens: 2000
+Table Name: ${table.tableName}
+Schema: ${table.schemaName}
+Columns (batch ${batchIndex + 1}/${totalBatches}):
+  - ${columnDetails}
+
+For each column, provide:
+- semanticName: A Korean business term (e.g., "사용자 ID", "생성일시", "주문번호")
+- description: A brief Korean description of what the column contains
+
+IMPORTANT: You MUST respond with ONLY a valid JSON object in this exact format, no other text:
+{
+  "columns": [
+    {
+      "columnName": "${columns[0]?.columnName || 'column_name'}",
+      "semanticName": "한글 의미명",
+      "description": "한글 설명"
+    }
+  ]
+}
+
+Include ALL ${columns.length} columns in your response.`;
+    }
+
+    // maxTokens를 컬럼 수에 맞게 동적으로 조정 (컬럼당 약 80토큰 + 버퍼)
+    const estimatedTokens = Math.min(4000, 500 + columns.length * 80);
+
+    const response = await this.llmService.generate({
+      prompt,
+      systemPrompt: 'You are a helpful data assistant. Output valid JSON only.',
+      temperature: 0.1,
+      maxTokens: estimatedTokens
+    });
+
+    let content = response.content;
+    content = content.replace(/<think>[\s\S]*?<\/think>/gi, '');
+    content = content.replace(/```json\s*/gi, '');
+    content = content.replace(/```\s*/gi, '');
+    content = content.trim();
+
+    let result: any = null;
+    try {
+      result = JSON.parse(content);
+    } catch {
+      const start = content.indexOf('{');
+      const end = content.lastIndexOf('}');
+      if (start !== -1 && end !== -1 && start < end) {
+        let jsonStr = content.substring(start, end + 1);
+        jsonStr = jsonStr.replace(/"([^"\\]*(\\.[^"\\]*)*)"/g, (match) => {
+          return match.replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t');
         });
-
-        // Clean up LLM response - handle various formats
-        let content = response.content;
-        
-        // Log raw response for debugging
-        this.logger.debug(`Raw LLM response for ${table.tableName}: ${content.substring(0, 500)}...`);
-        
-        // Remove qwen3 thinking blocks (if any)
-        content = content.replace(/<think>[\s\S]*?<\/think>/gi, '');
-        
-        // Remove markdown code blocks (various formats)
-        content = content.replace(/```json\s*/gi, '');
-        content = content.replace(/```\s*/gi, '');
-        content = content.trim();
-        
-        // Try multiple approaches to extract JSON
-        let result: any = null;
-        
-        // Approach 1: Direct parse
         try {
-          result = JSON.parse(content);
+          result = JSON.parse(jsonStr);
         } catch {
-          // Approach 2: Find JSON object boundaries
-          const start = content.indexOf('{');
-          const end = content.lastIndexOf('}');
-          
-          if (start !== -1 && end !== -1 && start < end) {
-            let jsonStr = content.substring(start, end + 1);
-            
-            // Fix control characters ONLY inside string values (between quotes)
-            jsonStr = jsonStr.replace(/"([^"\\]*(\\.[^"\\]*)*)"/g, (match) => {
-              return match
-                .replace(/\n/g, '\\n')
-                .replace(/\r/g, '\\r')
-                .replace(/\t/g, '\\t');
-            });
-            
-            try {
-              result = JSON.parse(jsonStr);
-            } catch (parseErr) {
-              // Approach 3: Try to fix common JSON issues
-              jsonStr = jsonStr
-                .replace(/,\s*}/g, '}')  // trailing comma
-                .replace(/,\s*]/g, ']')  // trailing comma in array
-                .replace(/'/g, '"');     // single quotes to double
-              
-              try {
-                result = JSON.parse(jsonStr);
-              } catch {
-                this.logger.warn(`JSON parse failed for ${table.tableName}, content preview: ${jsonStr.substring(0, 200)}`);
-                throw new Error('Failed to parse JSON from LLM response');
-              }
-            }
-          } else {
-            this.logger.warn(`No JSON object found in response for ${table.tableName}`);
-            throw new Error('No valid JSON object found in LLM response');
-          }
+          jsonStr = jsonStr.replace(/,\s*}/g, '}').replace(/,\s*]/g, ']').replace(/'/g, '"');
+          result = JSON.parse(jsonStr);
         }
-
-        // Update Table
-        if (result.tableDescription) {
-          await this.prisma.tableMetadata.update({
-            where: { id: table.id },
-            data: { description: result.tableDescription }
-          });
-        }
-
-        // Update Columns
-        if (result.columns && Array.isArray(result.columns)) {
-          for (const colResult of result.columns) {
-            const column = table.columns.find(c => c.columnName === colResult.columnName);
-            if (column) {
-               await this.prisma.columnMetadata.update({
-                 where: { id: column.id },
-                 data: {
-                   semanticName: colResult.semanticName,
-                   description: colResult.description
-                 }
-               });
-            }
-          }
-            }
-
-
-        // ===========================================
-        // Generate & Store Embedding (Vector RAG)
-        // ===========================================
-        try {
-          // 1. Construct rich text representation
-          // Include table type (VIEW/TABLE) for better context
-          const objectType = table.tableType === 'VIEW' ? 'View' : 
-                             table.tableType === 'MATERIALIZED_VIEW' ? 'Materialized View' : 'Table';
-          let embeddingText = `${objectType}: ${table.tableName}`;
-          
-          if (result.tableDescription) embeddingText += `\nDescription: ${result.tableDescription}`;
-          
-          // For VIEWs, include the SQL definition for better RAG matching
-          if (table.tableType === 'VIEW' && table.viewDefinition) {
-            const truncatedDef = table.viewDefinition.length > 1000 
-              ? table.viewDefinition.substring(0, 1000) + '...' 
-              : table.viewDefinition;
-            embeddingText += `\nView SQL: ${truncatedDef}`;
-          }
-          
-          const colInfo = (result.columns || []).map((c: any) => {
-             return `- ${c.columnName} (${c.semanticName || ''}): ${c.description || ''}`;
-          }).join('\n');
-          
-          if (colInfo) embeddingText += `\nColumns:\n${colInfo}`;
-
-          // 2. Generate Embedding
-          // Note: Ideally use a specific embedding model. If main model fails (e.g. chat only), catch error.
-          const embedding = await this.llmService.generateEmbedding(embeddingText);
-
-          // 3. Store in DB (using raw query for vector type)
-          // Ensure embedding is a string formatted as vector for PostgreSQL '[1,2,3]'
-          const vectorString = `[${embedding.join(',')}]`;
-
-          await this.prisma.$executeRaw`
-            INSERT INTO "SchemaEmbedding" ("id", "tableId", "content", "embedding", "updatedAt")
-            VALUES (gen_random_uuid(), ${table.id}, ${embeddingText}, ${vectorString}::vector, NOW())
-            ON CONFLICT ("tableId") 
-            DO UPDATE SET 
-              "content" = EXCLUDED."content",
-              "embedding" = EXCLUDED."embedding",
-              "updatedAt" = NOW();
-          `;
-          
-          this.logger.log(`Generated and stored embedding for table ${table.tableName}`);
-        } catch (embedError) {
-          this.logger.error(`Failed to generate embedding for table ${table.tableName}: ${embedError.message}`);
-          // Continue even if embedding fails, as translation is main goal here
-        }
-        processedRequestCount++;
-        this.logger.log(`Translated metadata for table ${table.tableName} (${processedRequestCount}/${totalTables})`);
-      } catch (error) {
-        this.logger.error(`Failed to translate metadata for table ${table.tableName}: ${error.message}`);
+      } else {
+        throw new Error('No valid JSON object found in LLM response');
       }
     }
 
-    return { success: true, processed: processedRequestCount, skipped: skippedCount, total: totalTables };
+    return {
+      tableDescription: result.tableDescription,
+      columns: result.columns || []
+    };
   }
 
-  // ===========================================
-  // 단일 테이블 번역
-  // ===========================================
   async translateSingleTable(tableId: string) {
     const table = await this.prisma.tableMetadata.findUnique({
       where: { id: tableId },
@@ -1704,112 +1722,94 @@ Include ALL ${table.columns.length} columns in your response.`;
       throw new Error('테이블에 컬럼이 없습니다.');
     }
 
-    // Build detailed column info
-    const columnDetails = table.columns.map(c => {
-      let info = `${c.columnName} (${c.dataType}`;
-      if (c.isNullable === false) info += ', NOT NULL';
-      if (c.isPrimaryKey) info += ', PK';
-      if (c.isForeignKey) info += `, FK -> ${c.referencedTable}.${c.referencedColumn}`;
-      if (c.description) info += `, desc: ${c.description}`;
-      info += ')';
-      return info;
-    }).join('\n  - ');
+    const totalColumns = table.columns.length;
+    const totalBatches = Math.ceil(totalColumns / this.COLUMN_BATCH_SIZE);
+    
+    this.logger.log(`Starting batch translation for table ${table.tableName}: ${totalColumns} columns in ${totalBatches} batches`);
 
-    const prompt = `You are a database metadata expert. Analyze the following table schema and provide Korean semantic names (business terms) and descriptions.
+    let tableDescription: string | undefined;
+    const allTranslatedColumns: any[] = [];
+    let failedBatches = 0;
 
-Table Name: ${table.tableName}
-Schema: ${table.schemaName}
-Columns:
-  - ${columnDetails}
+    // 배치 단위로 번역 수행
+    for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
+      const startIdx = batchIndex * this.COLUMN_BATCH_SIZE;
+      const endIdx = Math.min(startIdx + this.COLUMN_BATCH_SIZE, totalColumns);
+      const batchColumns = table.columns.slice(startIdx, endIdx);
+      
+      const isFirstBatch = batchIndex === 0;
+      
+      this.logger.log(`Translating batch ${batchIndex + 1}/${totalBatches} (${batchColumns.length} columns) for table ${table.tableName}`);
 
-Your task:
-1. Provide a Korean description for the table explaining what it stores
-2. For each column, provide:
-   - semanticName: A Korean business term (e.g., "사용자 ID", "생성일시", "주문번호")
-   - description: A brief Korean description of what the column contains
-
-IMPORTANT: You MUST respond with ONLY a valid JSON object in this exact format, no other text:
-{
-  "tableDescription": "테이블 설명",
-  "columns": [
-    {
-      "columnName": "${table.columns[0]?.columnName || 'column_name'}",
-      "semanticName": "한글 의미명",
-      "description": "한글 설명"
-    }
-  ]
-}
-
-Include ALL ${table.columns.length} columns in your response.`;
-
-    try {
-      const response = await this.llmService.generate({
-        prompt,
-        systemPrompt: 'You are a helpful data assistant. Output valid JSON only.',
-        temperature: 0.1,
-        maxTokens: 2000
-      });
-
-      let content = response.content;
-      content = content.replace(/<think>[\s\S]*?<\/think>/gi, '');
-      content = content.replace(/```json\s*/gi, '');
-      content = content.replace(/```\s*/gi, '');
-      content = content.trim();
-
-      let result: any = null;
       try {
-        result = JSON.parse(content);
-      } catch {
-        const start = content.indexOf('{');
-        const end = content.lastIndexOf('}');
-        if (start !== -1 && end !== -1 && start < end) {
-          let jsonStr = content.substring(start, end + 1);
-          jsonStr = jsonStr.replace(/"([^"\\]*(\\.[^"\\]*)*)"/g, (match) => {
-            return match.replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t');
-          });
-          try {
-            result = JSON.parse(jsonStr);
-          } catch {
-            jsonStr = jsonStr.replace(/,\s*}/g, '}').replace(/,\s*]/g, ']').replace(/'/g, '"');
-            result = JSON.parse(jsonStr);
-          }
-        }
-      }
+        const batchResult = await this.translateColumnBatch(
+          table,
+          batchColumns,
+          batchIndex,
+          totalBatches,
+          isFirstBatch
+        );
 
-      // Update Table
-      if (result.tableDescription) {
-        await this.prisma.tableMetadata.update({
-          where: { id: table.id },
-          data: { description: result.tableDescription }
+        if (isFirstBatch && batchResult.tableDescription) {
+          tableDescription = batchResult.tableDescription;
+        }
+
+        allTranslatedColumns.push(...batchResult.columns);
+        
+        this.logger.log(`Batch ${batchIndex + 1}/${totalBatches} completed: ${batchResult.columns.length} columns translated`);
+      } catch (error) {
+        this.logger.error(`Batch ${batchIndex + 1}/${totalBatches} failed for table ${table.tableName}: ${error.message}`);
+        failedBatches++;
+        // 실패한 배치는 건너뛰고 계속 진행
+      }
+    }
+
+    // 모든 배치가 실패한 경우
+    if (failedBatches === totalBatches) {
+      throw new Error(`번역 실패: 모든 ${totalBatches}개 배치가 실패했습니다.`);
+    }
+
+    // 결과 저장
+    if (tableDescription) {
+      await this.prisma.tableMetadata.update({
+        where: { id: table.id },
+        data: { description: tableDescription }
+      });
+    }
+
+    // 컬럼 업데이트
+    for (const colResult of allTranslatedColumns) {
+      const column = table.columns.find(c => c.columnName === colResult.columnName);
+      if (column) {
+        await this.prisma.columnMetadata.update({
+          where: { id: column.id },
+          data: {
+            semanticName: colResult.semanticName,
+            description: colResult.description
+          }
         });
       }
-
-      // Update Columns
-      if (result.columns && Array.isArray(result.columns)) {
-        for (const colResult of result.columns) {
-          const column = table.columns.find(c => c.columnName === colResult.columnName);
-          if (column) {
-            await this.prisma.columnMetadata.update({
-              where: { id: column.id },
-              data: {
-                semanticName: colResult.semanticName,
-                description: colResult.description
-              }
-            });
-          }
-        }
-      }
-
-      // Generate Embedding
-      await this.generateTableEmbedding(table, result);
-
-      this.logger.log(`Translated single table ${table.tableName}`);
-      return { success: true, tableName: table.tableName };
-    } catch (error) {
-      this.logger.error(`Failed to translate table ${table.tableName}: ${error.message}`);
-      throw new Error(`번역 실패: ${error.message}`);
     }
+
+    // 임베딩 생성
+    const result = {
+      tableDescription,
+      columns: allTranslatedColumns
+    };
+    await this.generateTableEmbedding(table, result);
+
+    const successRate = ((totalBatches - failedBatches) / totalBatches * 100).toFixed(1);
+    this.logger.log(`Translated table ${table.tableName}: ${allTranslatedColumns.length}/${totalColumns} columns (${successRate}% success rate)`);
+    
+    return { 
+      success: true, 
+      tableName: table.tableName,
+      translatedColumns: allTranslatedColumns.length,
+      totalColumns,
+      failedBatches
+    };
   }
+
 
   // ===========================================
   // 단일 테이블 AI 동기화 (임베딩 재생성)
