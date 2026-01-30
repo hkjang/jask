@@ -1593,8 +1593,8 @@ export class MetadataService {
   
   // LLM 설정 기본값
   private readonly LLM_SETTINGS_DEFAULTS = {
-    llm_translation_batch_size: 50,
-    llm_tokens_per_column: 80,
+    llm_translation_batch_size: 20,
+    llm_tokens_per_column: 100,
     llm_max_tokens_translation: 4000,
   };
 
@@ -1640,6 +1640,80 @@ export class MetadataService {
         tokensPerColumn: this.LLM_SETTINGS_DEFAULTS.llm_tokens_per_column,
         maxTokensTranslation: this.LLM_SETTINGS_DEFAULTS.llm_max_tokens_translation,
       };
+    }
+  }
+
+  /**
+   * 잘린 JSON 응답 복구 시도
+   * LLM이 max_tokens에 도달해서 응답이 잘린 경우 부분 데이터 추출
+   */
+  private repairTruncatedJson(content: string, columns: any[]): { columns: any[] } | null {
+    const recoveredColumns: any[] = [];
+    
+    try {
+      // columns 배열 시작점 찾기
+      const columnsMatch = content.match(/"columns"\s*:\s*\[/);
+      if (!columnsMatch) {
+        this.logger.warn('repairTruncatedJson: columns array not found');
+        return null;
+      }
+      
+      const columnsStart = content.indexOf(columnsMatch[0]) + columnsMatch[0].length;
+      let arrayContent = content.substring(columnsStart);
+      
+      // 개별 객체 추출 시도
+      const objectPattern = /\{\s*"columnName"\s*:\s*"([^"]+)"\s*,\s*"semanticName"\s*:\s*"([^"]*)"\s*,\s*"description"\s*:\s*"([^"]*)"\s*\}/g;
+      let match;
+      
+      while ((match = objectPattern.exec(arrayContent)) !== null) {
+        recoveredColumns.push({
+          columnName: match[1],
+          semanticName: match[2],
+          description: match[3]
+        });
+      }
+      
+      // 더 유연한 패턴으로 재시도 (필드 순서가 다를 수 있음)
+      if (recoveredColumns.length === 0) {
+        const flexiblePattern = /\{[^}]*"columnName"\s*:\s*"([^"]+)"[^}]*\}/g;
+        arrayContent = content.substring(columnsStart);
+        
+        while ((match = flexiblePattern.exec(arrayContent)) !== null) {
+          try {
+            const objStr = match[0];
+            // 불완전한 객체 정리
+            let fixedObj = objStr
+              .replace(/,\s*$/, '')  // 끝 쉼표 제거
+              .replace(/,\s*"[^"]*"\s*:\s*$/, '');  // 불완전한 마지막 필드 제거
+            
+            if (!fixedObj.endsWith('}')) {
+              fixedObj += '}';
+            }
+            
+            const parsed = JSON.parse(fixedObj);
+            if (parsed.columnName) {
+              recoveredColumns.push({
+                columnName: parsed.columnName,
+                semanticName: parsed.semanticName || '',
+                description: parsed.description || ''
+              });
+            }
+          } catch {
+            // 개별 객체 파싱 실패는 무시
+          }
+        }
+      }
+      
+      if (recoveredColumns.length > 0) {
+        this.logger.log(`repairTruncatedJson: Recovered ${recoveredColumns.length}/${columns.length} columns from truncated response`);
+        return { columns: recoveredColumns };
+      }
+      
+      this.logger.warn('repairTruncatedJson: Could not recover any columns');
+      return null;
+    } catch (error) {
+      this.logger.error(`repairTruncatedJson failed: ${error.message}`);
+      return null;
     }
   }
 
@@ -1740,7 +1814,7 @@ Include ALL ${columns.length} columns in your response.`;
     let result: any = null;
     try {
       result = JSON.parse(content);
-    } catch {
+    } catch (firstError) {
       const start = content.indexOf('{');
       const end = content.lastIndexOf('}');
       if (start !== -1 && end !== -1 && start < end) {
@@ -1752,10 +1826,19 @@ Include ALL ${columns.length} columns in your response.`;
           result = JSON.parse(jsonStr);
         } catch {
           jsonStr = jsonStr.replace(/,\s*}/g, '}').replace(/,\s*]/g, ']').replace(/'/g, '"');
-          result = JSON.parse(jsonStr);
+          try {
+            result = JSON.parse(jsonStr);
+          } catch {
+            // 잘린 JSON 배열 복구 시도
+            result = this.repairTruncatedJson(jsonStr, columns);
+          }
         }
       } else {
-        throw new Error('No valid JSON object found in LLM response');
+        // JSON 객체가 없는 경우 잘린 응답 복구 시도
+        result = this.repairTruncatedJson(content, columns);
+        if (!result) {
+          throw new Error('No valid JSON object found in LLM response');
+        }
       }
     }
 
@@ -1801,27 +1884,45 @@ Include ALL ${columns.length} columns in your response.`;
       
       this.logger.log(`Translating batch ${batchIndex + 1}/${totalBatches} (${batchColumns.length} columns) for table ${table.tableName}`);
 
-      try {
-        const batchResult = await this.translateColumnBatch(
-          table,
-          batchColumns,
-          batchIndex,
-          totalBatches,
-          isFirstBatch,
-          { tokensPerColumn: llmSettings.tokensPerColumn, maxTokensTranslation: llmSettings.maxTokensTranslation }
-        );
+      // 재시도 로직 추가 (최대 2회)
+      const maxRetries = 2;
+      let attempts = 0;
+      let success = false;
 
-        if (isFirstBatch && batchResult.tableDescription) {
-          tableDescription = batchResult.tableDescription;
+      while (attempts <= maxRetries && !success) {
+        try {
+          if (attempts > 0) {
+            this.logger.log(`Retrying batch ${batchIndex + 1}/${totalBatches} (attempt ${attempts + 1}/${maxRetries + 1})`);
+            // 재시도 전 짧은 지연
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
+
+          const batchResult = await this.translateColumnBatch(
+            table,
+            batchColumns,
+            batchIndex,
+            totalBatches,
+            isFirstBatch,
+            { tokensPerColumn: llmSettings.tokensPerColumn, maxTokensTranslation: llmSettings.maxTokensTranslation }
+          );
+
+          if (isFirstBatch && batchResult.tableDescription) {
+            tableDescription = batchResult.tableDescription;
+          }
+
+          allTranslatedColumns.push(...batchResult.columns);
+          
+          this.logger.log(`Batch ${batchIndex + 1}/${totalBatches} completed: ${batchResult.columns.length} columns translated`);
+          success = true;
+        } catch (error) {
+          attempts++;
+          if (attempts > maxRetries) {
+            this.logger.error(`Batch ${batchIndex + 1}/${totalBatches} failed for table ${table.tableName} after ${attempts} attempts: ${error.message}`);
+            failedBatches++;
+          } else {
+            this.logger.warn(`Batch ${batchIndex + 1}/${totalBatches} attempt ${attempts} failed: ${error.message}. Retrying...`);
+          }
         }
-
-        allTranslatedColumns.push(...batchResult.columns);
-        
-        this.logger.log(`Batch ${batchIndex + 1}/${totalBatches} completed: ${batchResult.columns.length} columns translated`);
-      } catch (error) {
-        this.logger.error(`Batch ${batchIndex + 1}/${totalBatches} failed for table ${table.tableName}: ${error.message}`);
-        failedBatches++;
-        // 실패한 배치는 건너뛰고 계속 진행
       }
     }
 
