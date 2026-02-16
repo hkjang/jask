@@ -1,0 +1,139 @@
+{namespace jask.codeSuggestion}
+
+/**
+ * PR 코드 제안 탭 메인 패널
+ * @param pullRequestId
+ * @param repositoryId
+ */
+{template .suggestionPanel}
+<div id="jask-code-suggestions" class="jask-suggestions-container"
+     data-pr-id="{$pullRequestId}" data-repo-id="{$repositoryId}">
+
+    {call .header /}
+
+    <div id="jask-suggestions-loading" class="jask-loading">
+        <aui-spinner size="medium"></aui-spinner>
+        <p>AI 코드 분석 결과를 불러오는 중...</p>
+    </div>
+
+    <div id="jask-suggestions-empty" class="jask-empty" style="display:none;">
+        <div class="jask-empty-icon">
+            <span class="aui-icon aui-icon-large aui-iconfont-approve"></span>
+        </div>
+        <h3>코드 제안이 없습니다</h3>
+        <p>AI가 이 Pull Request에서 개선할 사항을 찾지 못했습니다.</p>
+    </div>
+
+    <div id="jask-suggestions-error" class="jask-error" style="display:none;">
+        <div class="aui-message aui-message-error">
+            <p id="jask-error-message">오류가 발생했습니다.</p>
+        </div>
+    </div>
+
+    <div id="jask-suggestions-summary" class="jask-summary" style="display:none;">
+        {call .summary /}
+    </div>
+
+    <div id="jask-suggestions-list" class="jask-suggestions-list" style="display:none;">
+    </div>
+</div>
+{/template}
+
+
+/**
+ * 헤더 영역 (제목 + 액션 버튼)
+ */
+{template .header}
+<div class="jask-header">
+    <h2 class="jask-title">
+        <span class="aui-icon aui-icon-small aui-iconfont-lightbulb-filled"></span>
+        AI 코드 제안
+    </h2>
+    <div class="jask-actions">
+        <button id="jask-reanalyze-btn" class="aui-button" title="다시 분석">
+            <span class="aui-icon aui-icon-small aui-iconfont-refresh"></span>
+            다시 분석
+        </button>
+        <span id="jask-suggestions-badge" class="aui-badge" style="display:none;">0</span>
+    </div>
+</div>
+{/template}
+
+
+/**
+ * 분석 요약 영역
+ */
+{template .summary}
+<div class="jask-summary-grid">
+    <div class="jask-summary-card jask-score-card">
+        <div class="jask-score-value" id="jask-quality-score">-</div>
+        <div class="jask-score-label">코드 품질 점수</div>
+    </div>
+    <div class="jask-summary-card jask-critical-card">
+        <div class="jask-count" id="jask-critical-count">0</div>
+        <div class="jask-count-label">심각</div>
+    </div>
+    <div class="jask-summary-card jask-warning-card">
+        <div class="jask-count" id="jask-warning-count">0</div>
+        <div class="jask-count-label">경고</div>
+    </div>
+    <div class="jask-summary-card jask-info-card">
+        <div class="jask-count" id="jask-info-count">0</div>
+        <div class="jask-count-label">정보</div>
+    </div>
+    <div class="jask-summary-card jask-hint-card">
+        <div class="jask-count" id="jask-hint-count">0</div>
+        <div class="jask-count-label">참고</div>
+    </div>
+</div>
+<div class="jask-summary-filters">
+    <label>필터:</label>
+    <button class="aui-button aui-button-subtle jask-filter-btn active" data-filter="all">전체</button>
+    <button class="aui-button aui-button-subtle jask-filter-btn" data-filter="CRITICAL">심각</button>
+    <button class="aui-button aui-button-subtle jask-filter-btn" data-filter="WARNING">경고</button>
+    <button class="aui-button aui-button-subtle jask-filter-btn" data-filter="INFO">정보</button>
+    <button class="aui-button aui-button-subtle jask-filter-btn" data-filter="PENDING">미처리</button>
+</div>
+{/template}
+
+
+/**
+ * 인라인 diff 제안 패널 (diff 뷰에서 표시)
+ * @param? hasSuggestions
+ * @param? suggestions
+ */
+{template .inlineSuggestion}
+{if $hasSuggestions}
+<div class="jask-inline-suggestion">
+    <div class="jask-inline-header">
+        <span class="aui-icon aui-icon-small aui-iconfont-lightbulb-filled"></span>
+        <strong>AI 코드 제안</strong>
+    </div>
+    {if $suggestions}
+    {foreach $suggestion in $suggestions}
+    <div class="jask-inline-item" data-suggestion-id="{$suggestion.id}">
+        <div class="jask-inline-severity jask-severity-{$suggestion.severity |lower}">
+            {$suggestion.severity}
+        </div>
+        <div class="jask-inline-body">
+            <p class="jask-inline-explanation">{$suggestion.explanation}</p>
+            {if $suggestion.suggestedCode}
+            <div class="jask-inline-code">
+                <pre><code>{$suggestion.suggestedCode}</code></pre>
+            </div>
+            {/if}
+            <div class="jask-inline-actions">
+                <button class="aui-button aui-button-primary jask-accept-btn" data-id="{$suggestion.id}">
+                    적용
+                </button>
+                <button class="aui-button jask-reject-btn" data-id="{$suggestion.id}">
+                    무시
+                </button>
+            </div>
+        </div>
+    </div>
+    {/foreach}
+    {/if}
+</div>
+{/if}
+{/template}

@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<atlassian-plugin key="${atlassian.plugin.key}" name="Jask Code Suggestion" plugins-version="2">
+    <plugin-info>
+        <description>AI 기반 코드 제안 플러그인 - Pull Request에서 자동 코드 리뷰 및 개선 제안을 제공합니다.</description>
+        <version>${project.version}</version>
+        <vendor name="Jask" url="https://jask.ai"/>
+        <param name="plugin-icon">images/plugin-icon.png</param>
+        <param name="plugin-logo">images/plugin-logo.png</param>
+        <param name="atlassian-data-center-status">compatible</param>
+        <param name="atlassian-data-center-compatible">true</param>
+    </plugin-info>
+
+    <!-- ==================== Active Objects ==================== -->
+    <ao key="ao-module">
+        <description>Active Objects 모듈 - 코드 제안 데이터 저장</description>
+        <entity>com.jask.bitbucket.ao.SuggestionEntity</entity>
+        <entity>com.jask.bitbucket.ao.PluginSettingsEntity</entity>
+    </ao>
+
+    <!-- ==================== REST Resources ==================== -->
+    <rest key="code-suggestion-rest" path="/code-suggestion" version="1.0">
+        <description>코드 제안 REST API</description>
+        <package>com.jask.bitbucket.rest</package>
+    </rest>
+
+    <!-- ==================== PR Event Listener ==================== -->
+    <component key="pr-event-listener"
+               class="com.jask.bitbucket.hook.PullRequestEventListener">
+        <description>Pull Request 이벤트 리스너 - PR 생성/업데이트 시 자동 코드 분석</description>
+    </component>
+
+    <!-- ==================== Merge Check ==================== -->
+    <repository-merge-check key="code-suggestion-merge-check"
+                            class="com.jask.bitbucket.hook.CodeSuggestionMergeCheck"
+                            name="코드 제안 머지 체크"
+                            configurable="true">
+        <description>심각한 코드 이슈가 있을 때 머지를 차단합니다.</description>
+        <icon>images/plugin-icon.png</icon>
+        <scopes>
+            <scope>repository</scope>
+        </scopes>
+    </repository-merge-check>
+
+    <!-- ==================== Web Items ==================== -->
+    <web-item key="code-suggestion-pr-tab" name="코드 제안 탭"
+              section="bitbucket.pull-request.nav" weight="50">
+        <description>Pull Request에 코드 제안 탭 추가</description>
+        <label key="code-suggestion.pr.tab.label">AI 코드 제안</label>
+        <link linkId="code-suggestion-tab-link">/projects/${repository.project.key}/repos/${repository.slug}/pull-requests/${pullRequest.id}/code-suggestions</link>
+        <tooltip key="code-suggestion.pr.tab.tooltip">AI 기반 코드 개선 제안을 확인합니다</tooltip>
+    </web-item>
+
+    <!-- ==================== Web Panel (PR Diff Inline) ==================== -->
+    <web-panel key="code-suggestion-diff-panel" name="코드 제안 인라인 패널"
+               location="bitbucket.pull-request.diff.comment"
+               weight="100">
+        <description>Diff 뷰에서 인라인 코드 제안 표시</description>
+        <resource name="view" type="soy"
+                  location="/templates/pr-suggestion-panel.soy"/>
+        <client-context-provider
+                class="com.jask.bitbucket.hook.SuggestionContextProvider"/>
+    </web-panel>
+
+    <!-- ==================== Web Resources ==================== -->
+    <web-resource key="code-suggestion-resources" name="코드 제안 리소스">
+        <description>코드 제안 플러그인 프론트엔드 리소스</description>
+        <dependency>com.atlassian.auiplugin:ajs</dependency>
+        <dependency>com.atlassian.auiplugin:aui-flag</dependency>
+        <dependency>com.atlassian.auiplugin:aui-spinner</dependency>
+        <resource type="download" name="code-suggestion.css" location="/css/code-suggestion.css"/>
+        <resource type="download" name="code-suggestion.js" location="/js/code-suggestion.js"/>
+        <context>bitbucket.page.pullRequest.view</context>
+        <context>bitbucket.page.pullRequest.diff</context>
+    </web-resource>
+
+    <web-resource key="admin-resources" name="관리자 설정 리소스">
+        <description>관리자 설정 페이지 리소스</description>
+        <dependency>com.atlassian.auiplugin:ajs</dependency>
+        <dependency>com.atlassian.auiplugin:aui-flag</dependency>
+        <resource type="download" name="admin-config.css" location="/css/admin-config.css"/>
+        <resource type="download" name="admin-config.js" location="/js/admin-config.js"/>
+        <context>com.jask.bitbucket.code-suggestion-addon.admin</context>
+    </web-resource>
+
+    <!-- ==================== Admin Servlet ==================== -->
+    <servlet key="admin-config-servlet"
+             class="com.jask.bitbucket.servlet.AdminConfigServlet"
+             name="코드 제안 관리자 설정">
+        <description>관리자 설정 페이지</description>
+        <url-pattern>/code-suggestion/admin</url-pattern>
+    </servlet>
+
+    <!-- ==================== Admin Web Section ==================== -->
+    <web-item key="code-suggestion-admin-link" name="코드 제안 관리"
+              section="atl.admin/admin-plugins-section" weight="10">
+        <description>전역 관리자 메뉴에 코드 제안 설정 링크 추가</description>
+        <label key="admin.menu.label">AI 코드 제안 설정</label>
+        <link linkId="code-suggestion-admin-link">/plugins/servlet/code-suggestion/admin</link>
+        <condition class="com.atlassian.bitbucket.web.conditions.HasGlobalPermissionCondition">
+            <param name="permission">SYS_ADMIN</param>
+        </condition>
+    </web-item>
+
+    <!-- ==================== Component Imports ==================== -->
+    <component-import key="ao" interface="com.atlassian.activeobjects.external.ActiveObjects"/>
+    <component-import key="sal-settings" interface="com.atlassian.sal.api.pluginsettings.PluginSettingsFactory"/>
+    <component-import key="user-manager" interface="com.atlassian.sal.api.user.UserManager"/>
+    <component-import key="login-uri-provider" interface="com.atlassian.sal.api.auth.LoginUriProvider"/>
+    <component-import key="template-renderer" interface="com.atlassian.sal.api.message.I18nResolver"/>
+    <component-import key="soy-renderer" interface="com.atlassian.soy.renderer.SoyTemplateRenderer"/>
+    <component-import key="pull-request-service" interface="com.atlassian.bitbucket.pull.PullRequestService"/>
+    <component-import key="content-service" interface="com.atlassian.bitbucket.content.ContentService"/>
+    <component-import key="comment-service" interface="com.atlassian.bitbucket.comment.CommentService"/>
+    <component-import key="repository-service" interface="com.atlassian.bitbucket.repository.RepositoryService"/>
+    <component-import key="event-publisher" interface="com.atlassian.event.api.EventPublisher"/>
+
+    <!-- ==================== Component Declarations ==================== -->
+    <component key="code-analysis-service"
+               class="com.jask.bitbucket.service.CodeAnalysisServiceImpl"
+               interface="com.jask.bitbucket.service.CodeAnalysisService"/>
+
+    <component key="llm-client-service"
+               class="com.jask.bitbucket.service.LlmClientServiceImpl"
+               interface="com.jask.bitbucket.service.LlmClientService"/>
+
+    <component key="suggestion-service"
+               class="com.jask.bitbucket.service.SuggestionServiceImpl"
+               interface="com.jask.bitbucket.service.SuggestionService"/>
+
+    <component key="plugin-settings-service"
+               class="com.jask.bitbucket.config.PluginSettingsServiceImpl"
+               interface="com.jask.bitbucket.config.PluginSettingsService"/>
+
+    <component key="suggestion-context-provider"
+               class="com.jask.bitbucket.hook.SuggestionContextProvider"/>
+</atlassian-plugin>
